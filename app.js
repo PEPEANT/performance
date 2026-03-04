@@ -336,6 +336,10 @@
   }
   if (dom.queueLoopBtn) {
     dom.queueLoopBtn.addEventListener("click", () => {
+      if (!canControlShowOps()) {
+        updateQueueUi("호스트 전용 기능입니다.");
+        return;
+      }
       queueLoop = !queueLoop;
       updateQueueUi(queueLoop ? "루프 켜짐" : "루프 꺼짐");
     });
@@ -711,6 +715,10 @@ function applyQuality() {
       updateQueueUi("\uACF5\uC5F0\uC7A5 \uC548\uC5D0\uC11C\uB9CC \uB3D9\uC791\uD569\uB2C8\uB2E4.");
       return;
     }
+    if (!canControlShowOps()) {
+      updateQueueUi("호스트 전용 기능입니다.");
+      return;
+    }
     if (!Number.isInteger(clipId) || clipId < 1 || clipId > CLIP_IDS.length) {
       return;
     }
@@ -765,6 +773,11 @@ function toggleQueueRecording() {
       return;
     }
 
+    if (!canControlShowOps()) {
+      updateQueueUi("호스트 전용 기능입니다.");
+      return;
+    }
+
     queueRecording = !queueRecording;
     if (queueRecording) {
       queuePlaying = false;
@@ -782,6 +795,10 @@ function toggleQueueRecording() {
 function startQueuePlayback(resetSong) {
     if (activeMap !== "hall") {
       updateQueueUi("\uACF5\uC5F0\uC7A5 \uC548\uC5D0\uC11C\uB9CC \uB3D9\uC791\uD569\uB2C8\uB2E4.");
+      return;
+    }
+    if (!canControlShowOps()) {
+      updateQueueUi("호스트 전용 기능입니다.");
       return;
     }
     if (queueEvents.length === 0) {
@@ -818,6 +835,10 @@ function processQueuePlayback() {
   }
 
 function saveQueueToStorage() {
+    if (!canControlShowOps()) {
+      updateQueueUi("호스트 전용 기능입니다.");
+      return;
+    }
     try {
       const payload = {
         version: 1,
@@ -866,6 +887,10 @@ function loadQueueFromStorage(silent) {
   }
 
 function clearQueueEvents() {
+    if (!canControlShowOps()) {
+      updateQueueUi("호스트 전용 기능입니다.");
+      return;
+    }
     queueRecording = false;
     queuePlaying = false;
     queuePlayIndex = 0;
@@ -874,11 +899,16 @@ function clearQueueEvents() {
     updateQueueUi("\uD050\uB97C \uCD08\uAE30\uD654\uD588\uC2B5\uB2C8\uB2E4.");
   }
 
+function canControlShowOps() {
+    return !socketConnected || isHostClient;
+  }
+
 function updateClipButtons() {
+    const canControl = canControlShowOps();
     dom.clipButtons.forEach((button) => {
       const clipId = Number(button.dataset.clipId || 0);
       button.classList.toggle("active", clipId === currentClipId);
-      button.disabled = activeMap !== "hall";
+      button.disabled = activeMap !== "hall" || !canControl;
     });
   }
 
@@ -889,32 +919,43 @@ function updateClipButtons() {
 
     updateClipButtons();
     const hallOnly = activeMap === "hall";
+    const canControl = canControlShowOps();
 
     if (dom.queueRecordBtn) {
       dom.queueRecordBtn.classList.toggle("active", queueRecording);
-      dom.queueRecordBtn.textContent = queueRecording ? "\uD050 \uAE30\uB85D \uC911" : "\uD050 \uAE30\uB85D \uC2DC\uC791";
-      dom.queueRecordBtn.disabled = !hallOnly;
+      dom.queueRecordBtn.textContent = queueRecording ? "큐 기록 중" : "큐 기록 시작";
+      dom.queueRecordBtn.disabled = !hallOnly || !canControl;
     }
 
     if (dom.queuePlayBtn) {
       dom.queuePlayBtn.classList.toggle("active", queuePlaying);
-      dom.queuePlayBtn.textContent = queuePlaying ? "\uD050 \uC7AC\uC0DD \uC911" : "\uD050 \uC7AC\uC0DD";
-      dom.queuePlayBtn.disabled = !hallOnly || queueEvents.length === 0;
+      dom.queuePlayBtn.textContent = queuePlaying ? "큐 재생 중" : "큐 재생";
+      dom.queuePlayBtn.disabled = !hallOnly || !canControl || queueEvents.length === 0;
     }
 
     if (dom.queueLoopBtn) {
       dom.queueLoopBtn.classList.toggle("active", queueLoop);
-      dom.queueLoopBtn.textContent = queueLoop ? "\uB8E8\uD504 \uCF1C\uC9D0" : "\uB8E8\uD504 \uAEBC\uC9D0";
-      dom.queueLoopBtn.disabled = !hallOnly;
+      dom.queueLoopBtn.textContent = queueLoop ? "루프 켜짐" : "루프 꺼짐";
+      dom.queueLoopBtn.disabled = !hallOnly || !canControl;
     }
 
     if (dom.queueSaveBtn) {
-      dom.queueSaveBtn.disabled = queueEvents.length === 0;
+      dom.queueSaveBtn.disabled = !canControl || queueEvents.length === 0;
+    }
+
+    if (dom.queueLoadBtn) {
+      dom.queueLoadBtn.disabled = !canControl;
+    }
+
+    if (dom.queueClearBtn) {
+      dom.queueClearBtn.disabled = !canControl;
     }
 
     if (dom.queueStatus) {
-      const base = `\uD050 ${queueRecording ? "\uAE30\uB85D" : "\uB300\uAE30"} | \uC774\uBCA4\uD2B8 ${queueEvents.length}\uAC1C | ${queuePlaying ? "\uC7AC\uC0DD \uC911" : "\uC7AC\uC0DD \uB300\uAE30"}`;
-      dom.queueStatus.textContent = queueLastMessage ? `${base} | ${queueLastMessage}` : base;
+      const base = `큐 ${queueRecording ? "기록" : "대기"} | 이벤트 ${queueEvents.length}개 | ${queuePlaying ? "재생 중" : "재생 대기"}`;
+      const roleText = canControl ? "조작 가능" : "호스트 전용";
+      const withRole = `${base} | ${roleText}`;
+      dom.queueStatus.textContent = queueLastMessage ? `${withRole} | ${queueLastMessage}` : withRole;
     }
   }
 
@@ -2285,6 +2326,10 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     return seat;
   }
 })()
+
+
+
+
 
 
 
