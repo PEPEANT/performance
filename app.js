@@ -1909,9 +1909,7 @@ function clampNumber(value, min, max) {
 
     if (firstPersonEnabled) {
       updateFirstPersonMovement(delta);
-      camera.rotation.order = "YXZ";
-      camera.rotation.y = playerYaw;
-      camera.rotation.x = playerPitch;
+      applyFirstPersonViewRotation();
       syncOrbitTargetToCamera();
     } else {
       controls.update();
@@ -1974,6 +1972,7 @@ function clampNumber(value, min, max) {
       cameraTween = null;
       syncYawPitchFromCamera();
       syncPlayerHeightToGround({ resetVelocity: true });
+      applyFirstPersonViewRotation();
       if (requestLock) {
         tryPointerLock();
       }
@@ -2007,6 +2006,12 @@ function clampNumber(value, min, max) {
     if (!dom.fpsToggleBtn) return;
     dom.fpsToggleBtn.textContent = firstPersonEnabled ? "1\uC778\uCE6D \uBAA8\uB4DC \uB044\uAE30 (F)" : "1\uC778\uCE6D \uBAA8\uB4DC \uCF1C\uAE30 (F)";
     dom.fpsToggleBtn.classList.toggle("active", firstPersonEnabled);
+  }
+
+  function applyFirstPersonViewRotation() {
+    // Clear residual roll from orbit camera to avoid upside-down first-person view.
+    camera.rotation.set(playerPitch, playerYaw, 0, "YXZ");
+    camera.up.set(0, 1, 0);
   }
 
 function setMovementKeyState(key, code, pressed) {
