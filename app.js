@@ -2887,7 +2887,7 @@ function createLobbyMap(THREERef, targetScene, mobile) {
 
     const screenMat = new THREERef.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5, roughness: 0.4 });
     const screen = new THREERef.Mesh(new THREERef.PlaneGeometry(stageWidth, 18), screenMat);
-    screen.position.set(0, stageHeight + 9, -72);
+    screen.position.set(0, stageHeight + 11.2, -86);
     group.add(screen);
 
     const seatTemplate = buildSeatTemplate(THREERef);
