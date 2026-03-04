@@ -96,6 +96,10 @@
     networkNameInput: document.getElementById("network-name-input"),
     networkApplyBtn: document.getElementById("network-apply-btn"),
     networkNote: document.getElementById("network-note"),
+    controlsTitle: document.querySelector(".panel-controls h2"),
+    presetGrid: document.querySelector(".panel-controls .preset-grid"),
+    opsStack: document.querySelector(".panel-controls .ops-stack"),
+    clipPanel: document.querySelector(".clip-panel"),
     fpsToggleBtn: document.getElementById("fps-toggle-btn"),
     hudMap: document.getElementById("hud-map"),
     hudFps: document.getElementById("hud-fps"),
@@ -1527,6 +1531,11 @@ function updateClipButtons() {
 
 function updateShowStartButton() {
     if (!dom.showStartBtn) return;
+    if (!adminUiMode) {
+      dom.showStartBtn.classList.add("hidden");
+      dom.showStartBtn.disabled = true;
+      return;
+    }
     const hallOnly = activeMap === "hall";
     dom.showStartBtn.classList.toggle("hidden", !hallOnly);
 
@@ -1585,6 +1594,10 @@ function clampNumber(value, min, max) {
     const hideOptionalUi = !adminUiMode;
     setElementHidden(dom.introStats, hideOptionalUi);
     setElementHidden(dom.networkPanel, hideOptionalUi);
+    setElementHidden(dom.controlsTitle, hideOptionalUi);
+    setElementHidden(dom.presetGrid, hideOptionalUi);
+    setElementHidden(dom.opsStack, hideOptionalUi);
+    setElementHidden(dom.clipPanel, hideOptionalUi);
     setElementHidden(dom.chatUi, !chatEnabled);
     setElementHidden(dom.hudSeatsChip, hideOptionalUi);
     setElementHidden(dom.hudPlayersRow, true);
@@ -2217,12 +2230,12 @@ function setHostRole(nextHostId) {
     }
 
     if (dom.fpsToggleBtn) {
-      dom.fpsToggleBtn.classList.toggle("hidden", !isHostClient);
+      dom.fpsToggleBtn.classList.toggle("hidden", !adminUiMode || !isHostClient);
     }
 
     if (dom.hostDoorBtn) {
-      dom.hostDoorBtn.classList.toggle("hidden", !isHostClient);
-      dom.hostDoorBtn.disabled = !isHostClient;
+      dom.hostDoorBtn.classList.toggle("hidden", !adminUiMode || !isHostClient);
+      dom.hostDoorBtn.disabled = !adminUiMode || !isHostClient;
       if (!isHostClient) {
         dom.hostDoorBtn.textContent = "\uD638\uC2A4\uD2B8 \uC804\uC6A9";
       } else {
@@ -2827,7 +2840,7 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     group.add(doorGlow);
 
     const portalGroup = new THREERef.Group();
-    portalGroup.position.set(0, 0, 44.7);
+    portalGroup.position.set(0, 0, 5.6);
 
     const portalBase = new THREERef.Mesh(
       new THREERef.TorusGeometry(2.9 * 0.92, 0.18, 16, mobile ? 30 : 52),
