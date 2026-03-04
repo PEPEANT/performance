@@ -69,6 +69,7 @@
     statusIntent: document.getElementById("status-intent"),
     introStats: document.getElementById("intro-stats"),
     statCapacity: document.getElementById("stat-capacity"),
+    statCapacityCard: document.getElementById("stat-capacity") ? document.getElementById("stat-capacity").closest(".stat-card") : null,
     statLayout: document.getElementById("stat-layout"),
     statSeats: document.getElementById("stat-seats"),
     presetButtons: Array.from(document.querySelectorAll("[data-preset]")),
@@ -1470,7 +1471,7 @@ function updateShowStartButton() {
 function updateHud() {
     dom.hudMap.textContent = MAP_META[activeMap].label;
     dom.hudFps.textContent = String(fpsValue);
-    dom.hudSeats.textContent = `${activeAudience} / ${CAPACITY}`;
+    dom.hudSeats.textContent = String(activeAudience);
     dom.hudQuality.textContent = ({ low: "\uB0AE\uC74C", medium: "\uBCF4\uD1B5", high: "\uB192\uC74C" })[qualityMode] || "\uBCF4\uD1B5";
     if (!doorOpen) {
       dom.hudPortal.textContent = "\uB2EB\uD798";
@@ -1515,7 +1516,8 @@ function clampNumber(value, min, max) {
     setElementHidden(dom.networkPanel, hideOptionalUi);
     setElementHidden(dom.chatUi, !chatEnabled);
     setElementHidden(dom.hudSeatsChip, hideOptionalUi);
-    setElementHidden(dom.hudPlayersRow, hideOptionalUi);
+    setElementHidden(dom.hudPlayersRow, true);
+    setElementHidden(dom.statCapacityCard, true);
 
     if (hideOptionalUi) {
       activeAudience = CAPACITY;
