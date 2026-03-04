@@ -161,6 +161,17 @@ function sanitizeBooleanIntent(raw, fallback = false) {
   return Boolean(fallback);
 }
 
+function sanitizeClipId(raw, fallback = 0) {
+  const clipId = Math.trunc(Number(raw));
+  if (!Number.isFinite(clipId)) {
+    return Math.trunc(Number(fallback)) || 0;
+  }
+  if (clipId < CLIP_ID_MIN || clipId > CLIP_ID_MAX) {
+    return Math.trunc(Number(fallback)) || 0;
+  }
+  return clipId;
+}
+
 function clampNumber(value, min, max) {
   const n = Number(value);
   if (!Number.isFinite(n)) return min;
@@ -329,7 +340,6 @@ function handleJoin(socket, payload) {
     players: Array.from(room.players.values()).map((p) => serializePlayer(p)),
     capacity: MAX_ROOM_SIZE,
     requestedRole: player.wantsHost ? "host" : "player",
-    doorOpen: room.doorOpen,
     serverNow: Date.now()
   });
 
@@ -422,8 +432,8 @@ function handlePerformerClip(socket, payload) {
     return;
   }
 
-  const clipId = Math.trunc(Number(payload?.clipId));
-  if (!Number.isFinite(clipId) || clipId < CLIP_ID_MIN || clipId > CLIP_ID_MAX) {
+  const clipId = sanitizeClipId(payload?.clipId);
+  if (!clipId) {
     socket.emit("room:error", {
       code: "INVALID_CLIP",
       message: "유효하지 않은 클립 번호입니다.",
@@ -473,7 +483,7 @@ function handleDoorSet(socket, payload) {
   });
   emitSnapshot(room);
 }
-function handleShowStart(socket) {
+function handleShowStart(socket, payload) {
   const roomId = socketToRoom.get(socket.id);
   if (!roomId) return;
 
@@ -490,11 +500,13 @@ function handleShowStart(socket) {
     return;
   }
 
+  const requestedClipId = sanitizeClipId(payload?.activeClip, room.showState.activeClip || 0);
+
   room.showState = {
     playing: true,
     startedAt: Date.now(),
     by: socket.id,
-    activeClip: 0
+    activeClip: requestedClipId
   };
 
   io.to(room.key).emit("show:state", {
@@ -540,7 +552,7 @@ io.on("connection", (socket) => {
   socket.on("room:leave", () => leaveCurrentRoom(socket));
   socket.on("player:state", (payload) => handlePlayerState(socket, payload));
   socket.on("chat:send", (payload) => handleChatSend(socket, payload));
-  socket.on("show:start", () => handleShowStart(socket));
+  socket.on("show:start", (payload) => handleShowStart(socket, payload));
   socket.on("door:set", (payload) => handleDoorSet(socket, payload));
   socket.on("show:stop", () => handleShowStop(socket));
   socket.on("performer:clip", (payload) => handlePerformerClip(socket, payload));

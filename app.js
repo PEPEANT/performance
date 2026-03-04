@@ -423,6 +423,10 @@
           socketConnected,
           selfSocketId,
           roomPopulation,
+          showPlaying,
+          queuePlaying,
+          currentClipId,
+          lastNetworkActiveClipId,
           playerFootY,
           playerVelocityY,
           playerGrounded,
@@ -727,6 +731,19 @@ function applyQuality() {
     hallMap.performerMat.needsUpdate = true;
     chromaVideoReady = true;
 
+    if (showPlaying && activeMap === "hall") {
+      const autoClipId = normalizeClipId(currentClipId) || DEFAULT_CLIP_ID;
+      if (!socketConnected || isHostClient) {
+        playPerformerClip(autoClipId, {
+          record: false,
+          broadcast: socketConnected && isHostClient,
+          silent: true
+        });
+      } else {
+        applyLatestNetworkClip({ force: true });
+      }
+    }
+
     chroma.addEventListener("error", () => {
       chromaVideoReady = false;
       const failedClipPath = String(chroma.getAttribute("src") || CLIP_VIDEO_PATHS[DEFAULT_CLIP_ID]);
@@ -834,8 +851,17 @@ function applyQuality() {
 
     updateShowStartButton();
 
+    const startClipId = normalizeClipId(currentClipId) || DEFAULT_CLIP_ID;
+    if (!socketConnected || isHostClient) {
+      playPerformerClip(startClipId, {
+        record: false,
+        broadcast: socketConnected && isHostClient && broadcast,
+        silent: true
+      });
+    }
+
     if (broadcast && socketConnected && isHostClient && socket) {
-      socket.emit("show:start");
+      socket.emit("show:start", { activeClip: startClipId });
     }
 
     applyLatestNetworkClip();
