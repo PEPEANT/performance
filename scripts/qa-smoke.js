@@ -85,13 +85,13 @@ async function checkHttpRoutes(checks) {
   }
 }
 
-async function connectAndJoin(label, isHost) {
+async function connectAndJoin(label, isHost, roomId = ROOM_ID) {
   const socket = createClient(label);
   await onceWithTimeout(socket, 'connect', 8000);
 
   const joinedPromise = onceWithTimeout(socket, 'room:joined', 8000);
   socket.emit('room:join', {
-    roomId: ROOM_ID,
+    roomId,
     name: label,
     map: 'lobby',
     isHost
@@ -114,6 +114,21 @@ async function checkRealtimeFlow(checks) {
       name: 'host_assignment_consistent',
       ok: Boolean(host.joined.hostId && player.joined.hostId && host.joined.hostId === player.joined.hostId),
       detail: { hostId: host.joined.hostId, playerHostId: player.joined.hostId }
+    });
+
+    // New room where no one requests host: server must still assign one host.
+    const fallbackA = await connectAndJoin('fallback-A', false, 'qa-fallback-room');
+    clients.push(fallbackA.socket);
+    const fallbackB = await connectAndJoin('fallback-B', false, 'qa-fallback-room');
+    clients.push(fallbackB.socket);
+
+    checks.push({
+      name: 'host_fallback_when_no_intent',
+      ok: Boolean(fallbackA.joined.hostId && fallbackB.joined.hostId),
+      detail: {
+        fallbackAHostId: fallbackA.joined.hostId,
+        fallbackBHostId: fallbackB.joined.hostId
+      }
     });
 
     const doorBroadcast = onceWithTimeout(player.socket, 'door:state', 8000);
