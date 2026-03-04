@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -25,7 +25,7 @@
         <p id="status-intent">
           로비에서 복도를 지나 공연장으로 이동하세요.
         </p>
-        <div class="stat-grid">
+        <div id="intro-stats" class="stat-grid">
           <div class="stat-card">
             <span class="stat-label">수용 인원</span>
             <strong id="stat-capacity">50</strong>
@@ -61,7 +61,7 @@
             </div>
           </div>
 
-          <div class="ops-row">
+          <div class="ops-row" id="occupancy-row">
             <label class="ops-label" for="occupancy-range">관객 수</label>
             <input id="occupancy-range" type="range" min="0" max="50" step="1" value="50" />
             <p id="occupancy-label" class="ops-value">50 / 50</p>
@@ -77,7 +77,7 @@
           </div>
         </div>
 
-        <div class="network-panel">
+        <div id="network-panel" class="network-panel">
           <h3>온라인 접속</h3>
           <div class="network-grid">
             <label class="ops-label" for="network-role-select">역할</label>
@@ -147,7 +147,7 @@
     <aside id="hud" aria-live="polite">
       <div class="hud-chip"><span>맵</span><strong id="hud-map">로비</strong></div>
       <div class="hud-chip"><span>프레임</span><strong id="hud-fps">0</strong></div>
-      <div class="hud-chip"><span>좌석</span><strong id="hud-seats">0 / 50</strong></div>
+      <div class="hud-chip" id="hud-chip-seats"><span>좌석</span><strong id="hud-seats">0 / 50</strong></div>
       <div class="hud-chip"><span>품질</span><strong id="hud-quality">보통</strong></div>
       <div class="hud-chip"><span>문</span><strong id="hud-portal">열림</strong></div>
       <div class="hud-chip"><span>드로우콜</span><strong id="hud-drawcalls">0</strong></div>
@@ -195,6 +195,7 @@
   </main>
 </body>
 </html>
+
 
 
 

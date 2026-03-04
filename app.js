@@ -41,6 +41,8 @@
   };
   const query = new URLSearchParams(window.location.search);
   const fromEmptines = String(query.get("from") || "").trim().toLowerCase() === "emptines";
+  const adminUiMode = ["1", "true", "yes", "on"].includes(String(query.get("admin") || "").trim().toLowerCase());
+  const chatEnabled = adminUiMode;
   let hostMode = String(query.get("host") || "1").trim().toLowerCase() !== "0";
   let networkRoomId = String(query.get("room") || "main")
     .trim()
@@ -53,12 +55,14 @@
     canvasRoot: document.getElementById("canvas-root"),
     loading: document.getElementById("loading"),
     statusIntent: document.getElementById("status-intent"),
+    introStats: document.getElementById("intro-stats"),
     statCapacity: document.getElementById("stat-capacity"),
     statLayout: document.getElementById("stat-layout"),
     statSeats: document.getElementById("stat-seats"),
     presetButtons: Array.from(document.querySelectorAll("[data-preset]")),
     modeButtons: Array.from(document.querySelectorAll("[data-show-mode]")),
     occupancyRange: document.getElementById("occupancy-range"),
+    occupancyRow: document.getElementById("occupancy-row"),
     occupancyLabel: document.getElementById("occupancy-label"),
     qualitySelect: document.getElementById("quality-select"),
     portalActionBtn: document.getElementById("portal-action-btn"),
@@ -73,6 +77,7 @@
     queueLoadBtn: document.getElementById("queue-load-btn"),
     queueClearBtn: document.getElementById("queue-clear-btn"),
     queueStatus: document.getElementById("queue-status"),
+    networkPanel: document.getElementById("network-panel"),
     networkRoleSelect: document.getElementById("network-role-select"),
     networkRoomInput: document.getElementById("network-room-input"),
     networkNameInput: document.getElementById("network-name-input"),
@@ -81,11 +86,13 @@
     fpsToggleBtn: document.getElementById("fps-toggle-btn"),
     hudMap: document.getElementById("hud-map"),
     hudFps: document.getElementById("hud-fps"),
+    hudSeatsChip: document.getElementById("hud-chip-seats"),
     hudSeats: document.getElementById("hud-seats"),
     hudQuality: document.getElementById("hud-quality"),
     hudPortal: document.getElementById("hud-portal"),
     hudDrawcalls: document.getElementById("hud-drawcalls"),
     hudStatus: document.getElementById("hud-status"),
+    hudPlayersRow: document.getElementById("hud-row-players"),
     hudPlayers: document.getElementById("hud-players"),
     hudPosition: document.getElementById("hud-position"),
     hudFpsMini: document.getElementById("hud-fps-mini"),
@@ -116,6 +123,19 @@
   const REMOTE_BADGE_DISTANCE_SQ = 45 * 45;
   const PLAYER_STATE_SEND_INTERVAL = 1 / 15;
   const REMOTE_INTERPOLATION_SPEED = 8;
+  const PLAYER_GRAVITY = 24;
+  const PLAYER_JUMP_SPEED = 9.2;
+  const PLAYER_COLLISION_RADIUS = 0.42;
+  const HALL_STAGE_BOUNDS = Object.freeze({ minX: -26, maxX: 26, minZ: 84, maxZ: 108, height: 2.4 });
+  const LOBBY_BOUNDS = Object.freeze({
+    minZ: 3.2,
+    maxZ: 45.2,
+    corridorStartZ: 23,
+    lobbyHalfWidth: 13.2,
+    corridorHalfWidth: 3.55,
+    closedDoorBarrierZ: 22.2,
+    closedDoorHalfGap: 1.75
+  });
 
   dom.statCapacity.textContent = String(CAPACITY);
   dom.statLayout.textContent = `${ROWS} x ${COLS}`;
@@ -205,7 +225,8 @@
     backward: false,
     left: false,
     right: false,
-    run: false
+    run: false,
+    jump: false
   };
   const remotePlayers = new Map();
   const cameraDirectionTemp = new THREE.Vector3();
@@ -215,6 +236,9 @@
   let roomHostId = null;
   let isHostClient = hostMode;
   let roomPopulation = 1;
+  let playerFootY = 0;
+  let playerVelocityY = 0;
+  let playerGrounded = true;
   let stateSendAccumulator = 0;
   let pendingShowStartFromHost = false;
   let lastNetworkShowPlaying = null;
@@ -262,6 +286,10 @@
     }
 
     if (event.repeat) return;
+
+    if (key === " " || key === "spacebar") {
+      event.preventDefault();
+    }
 
     if (key === "e") enterHall();
     if (isHostClient && key === "h") {
@@ -312,11 +340,18 @@
     });
   });
 
-  dom.occupancyRange.addEventListener("input", () => {
-    activeAudience = Math.max(0, Math.min(CAPACITY, Number(dom.occupancyRange.value) || 0));
-    dom.occupancyLabel.textContent = `${activeAudience} / ${CAPACITY}`;
-    dom.statSeats.textContent = String(activeAudience);
-  });
+  if (dom.occupancyRange) {
+    dom.occupancyRange.addEventListener("input", () => {
+      if (!adminUiMode) return;
+      activeAudience = Math.max(0, Math.min(CAPACITY, Number(dom.occupancyRange.value) || 0));
+      if (dom.occupancyLabel) {
+        dom.occupancyLabel.textContent = `${activeAudience} / ${CAPACITY}`;
+      }
+      if (dom.statSeats) {
+        dom.statSeats.textContent = String(activeAudience);
+      }
+    });
+  }
 
   dom.qualitySelect.addEventListener("change", () => {
     qualityMode = QUALITY_MODES[dom.qualitySelect.value] ? dom.qualitySelect.value : "medium";
@@ -339,11 +374,11 @@
   if (dom.queueLoopBtn) {
     dom.queueLoopBtn.addEventListener("click", () => {
       if (!canControlShowOps()) {
-        updateQueueUi("호스트 전용 기능입니다.");
+        updateQueueUi("?몄뒪???꾩슜 湲곕뒫?낅땲??");
         return;
       }
       queueLoop = !queueLoop;
-      updateQueueUi(queueLoop ? "루프 켜짐" : "루프 꺼짐");
+      updateQueueUi(queueLoop ? "猷⑦봽 耳쒖쭚" : "猷⑦봽 爰쇱쭚");
     });
   }
   if (dom.queueSaveBtn) {
@@ -356,11 +391,16 @@
     dom.queueClearBtn.addEventListener("click", () => clearQueueEvents());
   }
 
-  setupNetworkProfileUi();
+  applyUiVisibilityMode();
+  if (adminUiMode) {
+    setupNetworkProfileUi();
+  }
   setupShowMedia();
   setupPlayerSystem();
   setupFirstPersonControls();
-  setupChatUi();
+  if (chatEnabled) {
+    setupChatUi();
+  }
   setupRealtime();
   loadQueueFromStorage(true);
   setDoorOpen(true);
@@ -369,24 +409,24 @@
   function enterHall() {
     if (activeMap !== "lobby" || transitionInFlight) return;
     if (!doorOpen) {
-      dom.loading.textContent = "문이 닫혀 있습니다. 호스트가 문을 열어야 입장할 수 있습니다.";
+      dom.loading.textContent = "臾몄씠 ?ロ? ?덉뒿?덈떎. ?몄뒪?멸? 臾몄쓣 ?댁뼱???낆옣?????덉뒿?덈떎.";
       dom.loading.classList.remove("hidden");
       setTimeout(() => {
         if (!transitionInFlight) {
           dom.loading.classList.add("hidden");
-          dom.loading.textContent = "로비 구성 중...";
+          dom.loading.textContent = "濡쒕퉬 援ъ꽦 以?..";
         }
       }, 900);
       return;
     }
     transitionInFlight = true;
-    dom.loading.textContent = "포탈 통과 중...";
+    dom.loading.textContent = "?ы깉 ?듦낵 以?..";
     dom.loading.classList.remove("hidden");
     setTimeout(() => {
       setMap("hall", true);
       setTimeout(() => {
         dom.loading.classList.add("hidden");
-        dom.loading.textContent = "로비 구성 중...";
+        dom.loading.textContent = "濡쒕퉬 援ъ꽦 以?..";
         transitionInFlight = false;
       }, 220);
     }, 420);
@@ -401,7 +441,7 @@
     doorOpen = next;
     doorTarget = doorOpen ? 1 : 0;
     if (dom.hostDoorBtn && isHostClient) {
-      dom.hostDoorBtn.textContent = doorOpen ? "호스트 문 닫기" : "호스트 문 열기";
+      dom.hostDoorBtn.textContent = doorOpen ? "?몄뒪??臾??リ린" : "?몄뒪??臾??닿린";
     }
     if (broadcast && socketConnected && socket && isHostClient) {
       socket.emit("door:set", { open: doorOpen, ts: Date.now() });
@@ -439,7 +479,7 @@
     updateRemotePlayerVisibility();
 
     if (firstPersonEnabled) {
-      camera.position.y = PLAYER_EYE_HEIGHT[activeMap];
+      syncPlayerHeightToGround({ resetVelocity: true });
       syncOrbitTargetToCamera();
     }
 
@@ -567,7 +607,7 @@ function applyQuality() {
       stageVideoReady = false;
       updateShowStartButton();
       const bgSrc = SHOW_VIDEO_PATH;
-      updateQueueUi(`배경 영상 로드 실패: ${bgSrc}`);
+      updateQueueUi(`諛곌꼍 ?곸긽 濡쒕뱶 ?ㅽ뙣: ${bgSrc}`);
       appendChatLine("시스템", `배경 영상 로드 실패: ${bgSrc}`, "system");
     });
 
@@ -600,7 +640,7 @@ function applyQuality() {
     chroma.addEventListener("error", () => {
       chromaVideoReady = false;
       const failedClipPath = String(chroma.getAttribute("src") || CLIP_VIDEO_PATHS[DEFAULT_CLIP_ID]);
-      updateQueueUi(`퍼포머 클립 로드 실패: ${failedClipPath}`);
+      updateQueueUi(`?쇳룷癒??대┰ 濡쒕뱶 ?ㅽ뙣: ${failedClipPath}`);
       appendChatLine("시스템", `퍼포머 클립 로드 실패: ${failedClipPath}`, "system");
     });
 
@@ -864,7 +904,7 @@ function toggleQueueRecording() {
     }
 
     if (!canControlShowOps()) {
-      updateQueueUi("호스트 전용 기능입니다.");
+      updateQueueUi("?몄뒪???꾩슜 湲곕뒫?낅땲??");
       return;
     }
 
@@ -888,7 +928,7 @@ function startQueuePlayback(resetSong) {
       return;
     }
     if (!canControlShowOps()) {
-      updateQueueUi("호스트 전용 기능입니다.");
+      updateQueueUi("?몄뒪???꾩슜 湲곕뒫?낅땲??");
       return;
     }
     if (queueEvents.length === 0) {
@@ -926,7 +966,7 @@ function processQueuePlayback() {
 
 function saveQueueToStorage() {
     if (!canControlShowOps()) {
-      updateQueueUi("호스트 전용 기능입니다.");
+      updateQueueUi("?몄뒪???꾩슜 湲곕뒫?낅땲??");
       return;
     }
     try {
@@ -978,7 +1018,7 @@ function loadQueueFromStorage(silent) {
 
 function clearQueueEvents() {
     if (!canControlShowOps()) {
-      updateQueueUi("호스트 전용 기능입니다.");
+      updateQueueUi("?몄뒪???꾩슜 湲곕뒫?낅땲??");
       return;
     }
     queueRecording = false;
@@ -1090,31 +1130,151 @@ function clampNumber(value, min, max) {
     return Math.min(max, Math.max(min, value));
   }
 
+  function setElementHidden(element, hidden) {
+    if (!element) return;
+    element.classList.toggle("hidden", Boolean(hidden));
+  }
+
+  function applyUiVisibilityMode() {
+    const hideOptionalUi = !adminUiMode;
+    setElementHidden(dom.introStats, hideOptionalUi);
+    setElementHidden(dom.occupancyRow, hideOptionalUi);
+    setElementHidden(dom.networkPanel, hideOptionalUi);
+    setElementHidden(dom.chatUi, !chatEnabled);
+    setElementHidden(dom.hudSeatsChip, hideOptionalUi);
+    setElementHidden(dom.hudPlayersRow, hideOptionalUi);
+
+    if (hideOptionalUi) {
+      activeAudience = CAPACITY;
+      if (dom.occupancyRange) {
+        dom.occupancyRange.value = String(CAPACITY);
+        dom.occupancyRange.disabled = true;
+      }
+      if (dom.occupancyLabel) {
+        dom.occupancyLabel.textContent = "";
+      }
+      if (dom.statSeats) {
+        dom.statSeats.textContent = "";
+      }
+    }
+  }
+
+  function getLobbyHalfWidth(z) {
+    return z > LOBBY_BOUNDS.corridorStartZ ? LOBBY_BOUNDS.corridorHalfWidth : LOBBY_BOUNDS.lobbyHalfWidth;
+  }
+
   function clampLobbyPoint(point) {
-    point.z = clampNumber(point.z, 3.2, 45.2);
-    const halfWidth = point.z > 23 ? 3.55 : 13.2;
+    point.z = clampNumber(point.z, LOBBY_BOUNDS.minZ, LOBBY_BOUNDS.maxZ);
+    const halfWidth = getLobbyHalfWidth(point.z);
     point.x = clampNumber(point.x, -halfWidth, halfWidth);
+  }
+
+  function resolveLobbyHorizontalPosition(nextPos) {
+    clampLobbyPoint(nextPos);
+
+    if (doorOpen) return;
+    if (Math.abs(nextPos.x) > LOBBY_BOUNDS.closedDoorHalfGap) return;
+    if (nextPos.z <= LOBBY_BOUNDS.closedDoorBarrierZ) return;
+
+    nextPos.z = LOBBY_BOUNDS.closedDoorBarrierZ;
+  }
+
+  function isInsideHallStage(x, z, margin = 0) {
+    return (
+      x >= HALL_STAGE_BOUNDS.minX + margin &&
+      x <= HALL_STAGE_BOUNDS.maxX - margin &&
+      z >= HALL_STAGE_BOUNDS.minZ + margin &&
+      z <= HALL_STAGE_BOUNDS.maxZ - margin
+    );
+  }
+
+  function resolveHallHorizontalPosition(nextPos, prevPos) {
+    nextPos.x = clampNumber(nextPos.x, -44, 44);
+    nextPos.z = clampNumber(nextPos.z, 38, 160);
+
+    const stageMinX = HALL_STAGE_BOUNDS.minX - PLAYER_COLLISION_RADIUS;
+    const stageMaxX = HALL_STAGE_BOUNDS.maxX + PLAYER_COLLISION_RADIUS;
+    const stageMinZ = HALL_STAGE_BOUNDS.minZ - PLAYER_COLLISION_RADIUS;
+    const stageMaxZ = HALL_STAGE_BOUNDS.maxZ + PLAYER_COLLISION_RADIUS;
+
+    const insideStageWall =
+      nextPos.x >= stageMinX &&
+      nextPos.x <= stageMaxX &&
+      nextPos.z >= stageMinZ &&
+      nextPos.z <= stageMaxZ;
+
+    const canEnterStage = playerFootY >= HALL_STAGE_BOUNDS.height - 1.0;
+    if (!insideStageWall || canEnterStage) {
+      return;
+    }
+
+    if (prevPos.z <= stageMinZ) {
+      nextPos.z = stageMinZ;
+      return;
+    }
+    if (prevPos.z >= stageMaxZ) {
+      nextPos.z = stageMaxZ;
+      return;
+    }
+    if (prevPos.x <= stageMinX) {
+      nextPos.x = stageMinX;
+      return;
+    }
+    if (prevPos.x >= stageMaxX) {
+      nextPos.x = stageMaxX;
+      return;
+    }
+
+    const distances = [
+      Math.abs(nextPos.z - stageMinZ),
+      Math.abs(stageMaxZ - nextPos.z),
+      Math.abs(nextPos.x - stageMinX),
+      Math.abs(stageMaxX - nextPos.x)
+    ];
+    const minDistance = Math.min(...distances);
+    if (minDistance === distances[0]) nextPos.z = stageMinZ;
+    else if (minDistance === distances[1]) nextPos.z = stageMaxZ;
+    else if (minDistance === distances[2]) nextPos.x = stageMinX;
+    else nextPos.x = stageMaxX;
+  }
+
+  function getGroundHeightAt(x, z, mapName) {
+    if (mapName === "hall" && isInsideHallStage(x, z)) {
+      return HALL_STAGE_BOUNDS.height;
+    }
+    return 0;
+  }
+
+  function syncPlayerHeightToGround(options = {}) {
+    const { resetVelocity = true } = options;
+    playerFootY = getGroundHeightAt(camera.position.x, camera.position.z, activeMap);
+    if (resetVelocity) {
+      playerVelocityY = 0;
+    }
+    playerGrounded = true;
+    camera.position.y = playerFootY + PLAYER_EYE_HEIGHT[activeMap];
   }
 
   function applyCameraCollision() {
     if (activeMap === "lobby") {
-      clampLobbyPoint(camera.position);
       if (firstPersonEnabled) {
-        camera.position.y = PLAYER_EYE_HEIGHT.lobby;
+        resolveLobbyHorizontalPosition(camera.position);
         return;
       }
+      clampLobbyPoint(camera.position);
       clampLobbyPoint(controls.target);
       camera.position.y = clampNumber(camera.position.y, 1.6, 16);
       controls.target.y = clampNumber(controls.target.y, 1.2, 7.5);
       return;
     }
 
-    camera.position.x = clampNumber(camera.position.x, -44, 44);
-    camera.position.z = clampNumber(camera.position.z, 38, 160);
     if (firstPersonEnabled) {
-      camera.position.y = PLAYER_EYE_HEIGHT.hall;
+      resolveHallHorizontalPosition(camera.position, camera.position);
       return;
     }
+
+    camera.position.x = clampNumber(camera.position.x, -44, 44);
+    camera.position.z = clampNumber(camera.position.z, 38, 160);
     camera.position.y = clampNumber(camera.position.y, 2, 32);
     controls.target.x = clampNumber(controls.target.x, -42, 42);
     controls.target.z = clampNumber(controls.target.z, 44, 158);
@@ -1378,7 +1538,7 @@ function clampNumber(value, min, max) {
     if (firstPersonEnabled) {
       cameraTween = null;
       syncYawPitchFromCamera();
-      camera.position.y = PLAYER_EYE_HEIGHT[activeMap];
+      syncPlayerHeightToGround({ resetVelocity: true });
       if (requestLock) {
         tryPointerLock();
       }
@@ -1420,6 +1580,7 @@ function setMovementKeyState(key, pressed) {
     if (key === "a" || key === "arrowleft") moveState.left = pressed;
     if (key === "d" || key === "arrowright") moveState.right = pressed;
     if (key === "shift") moveState.run = pressed;
+    if (key === " " || key === "space" || key === "spacebar") moveState.jump = pressed;
   }
 
   function updateFirstPersonMovement(delta) {
@@ -1427,23 +1588,54 @@ function setMovementKeyState(key, pressed) {
       return;
     }
 
+    const previousPos = camera.position.clone();
+
     const forwardIntent = (moveState.forward ? 1 : 0) - (moveState.backward ? 1 : 0);
     const strafeIntent = (moveState.right ? 1 : 0) - (moveState.left ? 1 : 0);
-    if (forwardIntent === 0 && strafeIntent === 0) {
-      return;
-    }
-
     const speed = PLAYER_MOVE_SPEED * (moveState.run ? PLAYER_RUN_MULTIPLIER : 1);
-    const forward = new THREE.Vector3(-Math.sin(playerYaw), 0, -Math.cos(playerYaw));
-    const right = new THREE.Vector3(Math.cos(playerYaw), 0, -Math.sin(playerYaw));
-    const movement = new THREE.Vector3();
-    movement.addScaledVector(forward, forwardIntent);
-    movement.addScaledVector(right, strafeIntent);
 
-    if (movement.lengthSq() > 0.0001) {
-      movement.normalize().multiplyScalar(speed * delta);
-      camera.position.add(movement);
+    const nextPos = camera.position.clone();
+    if (forwardIntent !== 0 || strafeIntent !== 0) {
+      const forward = new THREE.Vector3(-Math.sin(playerYaw), 0, -Math.cos(playerYaw));
+      const right = new THREE.Vector3(Math.cos(playerYaw), 0, -Math.sin(playerYaw));
+      const movement = new THREE.Vector3();
+      movement.addScaledVector(forward, forwardIntent);
+      movement.addScaledVector(right, strafeIntent);
+
+      if (movement.lengthSq() > 0.0001) {
+        movement.normalize().multiplyScalar(speed * delta);
+        nextPos.add(movement);
+      }
     }
+
+    if (activeMap === "lobby") {
+      resolveLobbyHorizontalPosition(nextPos);
+    } else {
+      resolveHallHorizontalPosition(nextPos, previousPos);
+    }
+
+    camera.position.x = nextPos.x;
+    camera.position.z = nextPos.z;
+
+    if (moveState.jump && playerGrounded) {
+      playerVelocityY = PLAYER_JUMP_SPEED;
+      playerGrounded = false;
+      moveState.jump = false;
+    }
+
+    playerVelocityY -= PLAYER_GRAVITY * delta;
+    playerFootY += playerVelocityY * delta;
+
+    const groundY = getGroundHeightAt(camera.position.x, camera.position.z, activeMap);
+    if (playerFootY <= groundY) {
+      playerFootY = groundY;
+      playerVelocityY = 0;
+      playerGrounded = true;
+    } else {
+      playerGrounded = false;
+    }
+
+    camera.position.y = playerFootY + PLAYER_EYE_HEIGHT[activeMap];
   }
 
   function syncOrbitTargetToCamera() {
@@ -1475,9 +1667,14 @@ function getLocalPlayerState() {
       ? playerPitch
       : THREE.MathUtils.clamp(Math.asin(clampNumber(cameraDirectionTemp.y, -1, 1)), -1.45, 1.45);
 
+    const eyeHeight = PLAYER_EYE_HEIGHT[activeMap] || 2.2;
+    const syncedEyeY = firstPersonEnabled
+      ? camera.position.y
+      : getGroundHeightAt(camera.position.x, camera.position.z, activeMap) + eyeHeight;
+
     return {
       x: camera.position.x,
-      y: camera.position.y,
+      y: syncedEyeY,
       z: camera.position.z,
       yaw,
       pitch,
@@ -1547,18 +1744,28 @@ function applyRoomSnapshot(snapshot) {
   }
 
 function upsertRemotePlayer(entry) {
+    const remoteMap = entry.map === "hall" ? "hall" : "lobby";
+    const entryX = Number(entry.x) || 0;
+    const entryZ = Number(entry.z) || 0;
+    const entryY = Number(entry.y);
+    const remoteEyeHeight = PLAYER_EYE_HEIGHT[remoteMap] || 2.2;
+    const groundY = getGroundHeightAt(entryX, entryZ, remoteMap);
+    const footY = Number.isFinite(entryY)
+      ? Math.max(groundY, entryY - remoteEyeHeight)
+      : groundY;
+
     let remote = remotePlayers.get(entry.id);
     if (!remote) {
       const avatar = createPlayerAvatar(entry.name);
-      avatar.position.set(Number(entry.x) || 0, 0, Number(entry.z) || 0);
+      avatar.position.set(entryX, footY, entryZ);
       avatar.rotation.y = Number(entry.yaw) || 0;
       playerLayer.add(avatar);
 
       remote = {
         id: entry.id,
-        map: entry.map === "hall" ? "hall" : "lobby",
+        map: remoteMap,
         mesh: avatar,
-        targetPos: new THREE.Vector3(Number(entry.x) || 0, 0, Number(entry.z) || 0),
+        targetPos: new THREE.Vector3(entryX, footY, entryZ),
         targetYaw: Number(entry.yaw) || 0,
         inActiveMap: false
       };
@@ -1566,8 +1773,8 @@ function upsertRemotePlayer(entry) {
       remotePlayers.set(entry.id, remote);
     }
 
-    remote.map = entry.map === "hall" ? "hall" : "lobby";
-    remote.targetPos.set(Number(entry.x) || 0, 0, Number(entry.z) || 0);
+    remote.map = remoteMap;
+    remote.targetPos.set(entryX, footY, entryZ);
     remote.targetYaw = Number(entry.yaw) || 0;
     remote.mesh.userData.playerName = String(entry.name || remote.mesh.userData.playerName || "\uD50C\uB808\uC774\uC5B4");
   }
@@ -1793,7 +2000,7 @@ function createPlayerAvatar(name) {
     );
     icon.position.set(0, 2.07, 0.06);
 
-    avatar.userData.playerName = String(name || "플레이어");
+    avatar.userData.playerName = String(name || "?뚮젅?댁뼱");
     avatar.add(body, head, badge, icon);
     return avatar;
   }
@@ -1965,7 +2172,7 @@ function sanitizeChatText(input) {
   }
 
 function appendChatLine(name, text, type) {
-    if (!dom.chatLog) return;
+    if (!chatEnabled || !dom.chatLog) return;
 
     const line = document.createElement("p");
     line.className = "chat-line";
@@ -2052,7 +2259,7 @@ function createLobbyMap(THREERef, targetScene, mobile) {
       corridorStrips.push(strip);
     }
 
-    // 로비의 넓은 면(z=3 경계)에 공연장 연결문 배치
+    // 濡쒕퉬???볦? 硫?z=3 寃쎄퀎)??怨듭뿰???곌껐臾?諛곗튂
     const doorZ = 22.65;
     const doorFrameMat = new THREERef.MeshStandardMaterial({ color: 0x1d273b, roughness: 0.64, metalness: 0.32 });
     const doorFrameLeft = new THREERef.Mesh(new THREERef.BoxGeometry(2.1, 8, 0.7), wallMat);
@@ -2468,3 +2675,9 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     return seat;
   }
 })()
+
+
+
+
+
+
