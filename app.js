@@ -2,6 +2,7 @@
   const CAPACITY = 50;
   const ROWS = 5;
   const COLS = 10;
+  const SHOW_VIDEO_PATH = "./01.mp4";
 
   const SHOW_MODES = {
     rehearsal: { crowdBounce: 0.14, screenPulse: 0.1, lightBoost: 0.72 },
@@ -119,6 +120,9 @@
   let fpsFrames = 0;
   let fpsClock = 0;
   let fpsValue = 60;
+  let stageVideo = null;
+  let stageVideoTexture = null;
+  let stageVideoReady = false;
 
   dom.portalActionBtn.addEventListener("click", () => enterHall());
   if (dom.hostDoorBtn) {
@@ -148,6 +152,9 @@
       setDoorOpen(!doorOpen);
     }
   });
+  window.addEventListener("pointerdown", () => {
+    updateShowPlayback();
+  });
 
   dom.presetButtons.forEach((button) => {
     button.addEventListener("click", () => applyPreset(button.dataset.preset, false));
@@ -157,6 +164,7 @@
     button.addEventListener("click", () => {
       showMode = SHOW_MODES[button.dataset.showMode] ? button.dataset.showMode : "live";
       dom.modeButtons.forEach((b) => b.classList.toggle("active", b === button));
+      updateShowPlayback();
     });
   });
 
@@ -171,6 +179,7 @@
     applyQuality();
   });
 
+  setupShowVideoTexture();
   setDoorOpen(true);
 
   function enterHall() {
@@ -228,6 +237,7 @@
 
     const defaultPreset = activeMap === "hall" ? "hall_wide" : "lobby_entry";
     applyPreset(defaultPreset, immediate);
+    updateShowPlayback();
     updateUiByMap();
     updateHud();
   }
@@ -296,6 +306,59 @@
     updateHud();
   }
 
+  function setupShowVideoTexture() {
+    const video = document.createElement("video");
+    video.src = SHOW_VIDEO_PATH;
+    video.preload = "auto";
+    video.loop = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.crossOrigin = "anonymous";
+    video.setAttribute("webkit-playsinline", "true");
+    stageVideo = video;
+
+    video.addEventListener(
+      "canplay",
+      () => {
+        stageVideoTexture = new THREE.VideoTexture(video);
+        stageVideoTexture.minFilter = THREE.LinearFilter;
+        stageVideoTexture.magFilter = THREE.LinearFilter;
+        stageVideoTexture.generateMipmaps = false;
+        stageVideoTexture.encoding = THREE.sRGBEncoding;
+
+        hallMap.screenMat.map = stageVideoTexture;
+        hallMap.screenMat.emissiveMap = stageVideoTexture;
+        hallMap.screenMat.color.set(0xffffff);
+        hallMap.screenMat.emissive.set(0xffffff);
+        hallMap.screenMat.emissiveIntensity = 1.05;
+        hallMap.screenMat.needsUpdate = true;
+
+        stageVideoReady = true;
+        updateShowPlayback();
+      },
+      { once: true }
+    );
+
+    video.addEventListener("error", () => {
+      stageVideoReady = false;
+    });
+
+    video.load();
+  }
+
+  function updateShowPlayback() {
+    if (!stageVideo || !stageVideoReady) return;
+    const shouldPlay = activeMap === "hall";
+    if (!shouldPlay) {
+      stageVideo.pause();
+      return;
+    }
+    const playPromise = stageVideo.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {});
+    }
+  }
+
   function updateHud() {
     dom.hudMap.textContent = MAP_META[activeMap].label;
     dom.hudFps.textContent = String(fpsValue);
@@ -321,9 +384,15 @@
     const mode = SHOW_MODES[showMode] || SHOW_MODES.live;
     const hue = (time * 0.045 + 0.55) % 1;
     const pulse = 0.5 + Math.sin(time * 2.4) * mode.screenPulse;
-
-    hallMap.screenMat.emissive.setHSL(hue, 0.84, Math.max(0.25, pulse));
-    hallMap.screenMat.color.setHSL(hue, 0.76, 0.48);
+    const usingVideoScreen = stageVideoReady && stageVideo && !stageVideo.paused;
+    if (!usingVideoScreen) {
+      hallMap.screenMat.emissive.setHSL(hue, 0.84, Math.max(0.25, pulse));
+      hallMap.screenMat.color.setHSL(hue, 0.76, 0.48);
+    } else {
+      hallMap.screenMat.color.set(0xffffff);
+      hallMap.screenMat.emissive.set(0xffffff);
+      hallMap.screenMat.emissiveIntensity = 1.05;
+    }
     hallMap.edgeMat.emissiveIntensity = 0.42 + Math.sin(time * 3.8) * (0.12 + mode.screenPulse * 0.42);
 
     hallMap.movingLights.forEach((entry, index) => {
@@ -634,6 +703,35 @@
     const stageEdge = new THREERef.Mesh(new THREERef.BoxGeometry(stageWidth + 0.3, 0.2, 0.24), edgeMat);
     stageEdge.position.set(0, 1.3, -45.95);
     group.add(stageEdge);
+
+    const micMat = new THREERef.MeshStandardMaterial({ color: 0xadb7d0, roughness: 0.28, metalness: 0.74 });
+    const micDarkMat = new THREERef.MeshStandardMaterial({ color: 0x171d2a, roughness: 0.62, metalness: 0.16 });
+    const micGroup = new THREERef.Group();
+
+    const micBase = new THREERef.Mesh(new THREERef.CylinderGeometry(0.42, 0.52, 0.12, 20), micDarkMat);
+    micBase.position.y = 2.46;
+    micGroup.add(micBase);
+
+    const micPole = new THREERef.Mesh(new THREERef.CylinderGeometry(0.045, 0.045, 2.2, 14), micMat);
+    micPole.position.y = 3.56;
+    micGroup.add(micPole);
+
+    const micHead = new THREERef.Mesh(new THREERef.SphereGeometry(0.16, 18, 18), micDarkMat);
+    micHead.position.set(0, 4.72, -0.06);
+    micGroup.add(micHead);
+
+    const micStem = new THREERef.Mesh(new THREERef.CylinderGeometry(0.025, 0.025, 0.44, 10), micMat);
+    micStem.position.set(0, 4.54, -0.14);
+    micStem.rotation.x = -0.6;
+    micGroup.add(micStem);
+
+    micGroup.position.set(0, 0, -50.4);
+    micGroup.traverse((obj) => {
+      if (!obj.isMesh) return;
+      obj.castShadow = true;
+      obj.receiveShadow = true;
+    });
+    group.add(micGroup);
 
     const screenMat = new THREERef.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5, roughness: 0.4 });
     const screen = new THREERef.Mesh(new THREERef.PlaneGeometry(stageWidth, 18), screenMat);
