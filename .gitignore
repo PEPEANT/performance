@@ -1,0 +1,8 @@
+# Keep legacy reference project out of this repo
+OX/
+
+# Local/editor noise
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
