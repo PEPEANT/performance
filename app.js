@@ -39,6 +39,13 @@
       hint: "\uBB34\uB300 \uC5F0\uCD9C\uACFC \uAC1D\uC11D \uC0C1\uD0DC\uB97C \uD655\uC778\uD558\uC138\uC694."
     }
   };
+  const PORTAL_FLOW = Object.freeze({
+    cooldownSeconds: 22,
+    warningSeconds: 7,
+    openSeconds: 14,
+    epochMs: Date.UTC(2026, 0, 1, 0, 0, 0)
+  });
+
   const query = new URLSearchParams(window.location.search);
   const fromEmptines = String(query.get("from") || "").trim().toLowerCase() === "emptines";
   const adminUiMode = ["1", "true", "yes", "on"].includes(String(query.get("admin") || "").trim().toLowerCase());
@@ -66,6 +73,7 @@
     occupancyLabel: document.getElementById("occupancy-label"),
     qualitySelect: document.getElementById("quality-select"),
     portalActionBtn: document.getElementById("portal-action-btn"),
+    portalPhaseNote: document.getElementById("portal-phase-note"),
     showStartBtn: document.getElementById("show-start-btn"),
     hostDoorBtn: document.getElementById("host-door-btn"),
     returnLobbyBtn: document.getElementById("return-lobby-btn"),
@@ -100,7 +108,10 @@
     chatLog: document.getElementById("chat-log"),
     chatInput: document.getElementById("chat-input"),
     chatSend: document.getElementById("chat-send"),
-    chatToggle: document.getElementById("chat-toggle")
+    chatToggle: document.getElementById("chat-toggle"),
+    portalTransition: document.getElementById("portal-transition"),
+    portalTransitionLabel: document.getElementById("portal-transition-label"),
+    portalTransitionTitle: document.getElementById("portal-transition-title")
   };
 
   if (!dom.canvasRoot || !dom.loading || !window.THREE || !window.THREE.OrbitControls) {
@@ -191,6 +202,8 @@
   let cameraTween = null;
   let transitionInFlight = false;
   let doorOpen = true;
+  let portalState = { phase: "cooldown", secondsLeft: 0, progress: 0 };
+  let lastPortalUiSignature = "";
   let doorTarget = 1;
   let doorSlide = 1;
   let loadingHidden = false;
@@ -406,6 +419,7 @@
   setupRealtime();
   loadQueueFromStorage(true);
   setDoorOpen(true);
+  refreshPortalState(true);
   updateQueueUi();
   installDebugBridge();
 
@@ -500,8 +514,112 @@
     };
   }
 
+  function computePortalState(nowMs = Date.now()) {
+    const cycle = PORTAL_FLOW.cooldownSeconds + PORTAL_FLOW.warningSeconds + PORTAL_FLOW.openSeconds;
+    if (cycle <= 0) {
+      return { phase: "open", secondsLeft: 0, progress: 1 };
+    }
+
+    let elapsed = ((nowMs - PORTAL_FLOW.epochMs) / 1000) % cycle;
+    if (elapsed < 0) elapsed += cycle;
+
+    if (elapsed < PORTAL_FLOW.cooldownSeconds) {
+      const remaining = PORTAL_FLOW.cooldownSeconds - elapsed;
+      return {
+        phase: "cooldown",
+        secondsLeft: Math.max(0, Math.ceil(remaining)),
+        progress: elapsed / PORTAL_FLOW.cooldownSeconds
+      };
+    }
+
+    elapsed -= PORTAL_FLOW.cooldownSeconds;
+    if (elapsed < PORTAL_FLOW.warningSeconds) {
+      const remaining = PORTAL_FLOW.warningSeconds - elapsed;
+      return {
+        phase: "warning",
+        secondsLeft: Math.max(0, Math.ceil(remaining)),
+        progress: elapsed / PORTAL_FLOW.warningSeconds
+      };
+    }
+
+    elapsed -= PORTAL_FLOW.warningSeconds;
+    const remaining = PORTAL_FLOW.openSeconds - elapsed;
+    return {
+      phase: "open",
+      secondsLeft: Math.max(0, Math.ceil(remaining)),
+      progress: elapsed / PORTAL_FLOW.openSeconds
+    };
+  }
+
+  function getPortalPhaseSummary() {
+    if (!doorOpen) return "\uBB38 \uB2EB\uD798 - \uD638\uC2A4\uD2B8 \uB300\uAE30";
+    if (portalState.phase === "open") return "\uD3EC\uD0C8 \uAC1C\uBC29\uB428";
+    if (portalState.phase === "warning") return "\uAC1C\uBC29 \uC900\uBE44 " + portalState.secondsLeft + "\uCD08";
+    return "\uD3EC\uD0C8 \uCDA9\uC804 " + portalState.secondsLeft + "\uCD08";
+  }
+
+  function setPortalTransition(active, label, title) {
+    if (!dom.portalTransition) return;
+    if (typeof label === "string" && dom.portalTransitionLabel) {
+      dom.portalTransitionLabel.textContent = label;
+    }
+    if (typeof title === "string" && dom.portalTransitionTitle) {
+      dom.portalTransitionTitle.textContent = title;
+    }
+    dom.portalTransition.classList.toggle("active", Boolean(active));
+    dom.portalTransition.setAttribute("aria-hidden", active ? "false" : "true");
+  }
+
+  function updatePortalUiCopy(forceMapHint = false) {
+    if (activeMap !== "lobby") {
+      if (forceMapHint && dom.statusIntent) {
+        dom.statusIntent.textContent = MAP_META[activeMap].hint;
+      }
+      if (dom.portalPhaseNote) {
+        dom.portalPhaseNote.textContent = "\uB85C\uBE44\uC5D0\uC11C \uD3EC\uD0C8 \uC0C1\uD0DC\uB97C \uD655\uC778\uD558\uC138\uC694.";
+      }
+      updateDoorUi();
+      return;
+    }
+
+    const summary = getPortalPhaseSummary();
+
+    if (dom.statusIntent) {
+      if (!doorOpen) {
+        dom.statusIntent.textContent = "\uBB38\uC774 \uB2EB\uD600 \uC788\uC2B5\uB2C8\uB2E4. \uD638\uC2A4\uD2B8\uAC00 \uBB38\uC744 \uC5F4\uBA74 \uD3EC\uD0C8 \uB300\uAE30 \uB2E8\uACC4\uAC00 \uC9C4\uD589\uB429\uB2C8\uB2E4.";
+      } else if (portalState.phase === "open") {
+        dom.statusIntent.textContent = "\uD3EC\uD0C8\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. E\uB97C \uB20C\uB7EC \uACF5\uC5F0\uC7A5\uC73C\uB85C \uC785\uC7A5\uD558\uC138\uC694.";
+      } else if (portalState.phase === "warning") {
+        dom.statusIntent.textContent = "\uD3EC\uD0C8 \uAC1C\uBC29 \uC900\uBE44 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uC785\uC7A5 \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
+      } else {
+        dom.statusIntent.textContent = "\uD3EC\uD0C8 \uCDA9\uC804 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uAC1C\uBC29\uB429\uB2C8\uB2E4.";
+      }
+    }
+
+    if (dom.portalPhaseNote) {
+      dom.portalPhaseNote.textContent = summary;
+    }
+
+    updateDoorUi();
+  }
+
+  function refreshPortalState(force) {
+    const next = computePortalState(Date.now());
+    portalState = next;
+    const signature = activeMap + "|" + (doorOpen ? 1 : 0) + "|" + next.phase + "|" + next.secondsLeft;
+    if (!force && signature === lastPortalUiSignature) {
+      return;
+    }
+    lastPortalUiSignature = signature;
+    updatePortalUiCopy(false);
+    updateHud();
+  }
+
   function enterHall() {
     if (activeMap !== "lobby" || transitionInFlight) return;
+
+    refreshPortalState(false);
+
     if (!doorOpen) {
       dom.loading.textContent = "\uBB38\uC774 \uB2EB\uD600 \uC788\uC2B5\uB2C8\uB2E4. \uD638\uC2A4\uD2B8\uAC00 \uBB38\uC744 \uC5F4\uC5B4\uC57C \uC785\uC7A5\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
       dom.loading.classList.remove("hidden");
@@ -513,17 +631,36 @@
       }, 900);
       return;
     }
+
+    if (portalState.phase !== "open") {
+      const waitText = portalState.phase === "warning"
+        ? "\uD3EC\uD0C8 \uAC1C\uBC29 \uC900\uBE44 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uC785\uC7A5 \uAC00\uB2A5\uD569\uB2C8\uB2E4."
+        : "\uD3EC\uD0C8 \uCDA9\uC804 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uAC1C\uBC29\uB429\uB2C8\uB2E4.";
+      dom.loading.textContent = waitText;
+      dom.loading.classList.remove("hidden");
+      setTimeout(() => {
+        if (!transitionInFlight) {
+          dom.loading.classList.add("hidden");
+          dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
+        }
+      }, 900);
+      return;
+    }
+
     transitionInFlight = true;
+    setPortalTransition(true, "\uD3EC\uD0C8 \uB3D9\uAE30\uD654", "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 \uC911...");
     dom.loading.textContent = "\uD3EC\uD0C8 \uD1B5\uACFC \uC911...";
     dom.loading.classList.remove("hidden");
+
     setTimeout(() => {
       setMap("hall", true);
+      setPortalTransition(false);
       setTimeout(() => {
         dom.loading.classList.add("hidden");
         dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
         transitionInFlight = false;
-      }, 220);
-    }, 420);
+      }, 180);
+    }, 680);
   }
 
   function setDoorOpen(nextOpen, options = {}) {
@@ -540,7 +677,7 @@
     if (broadcast && socketConnected && socket && isHostClient) {
       socket.emit("door:set", { open: doorOpen, ts: Date.now() });
     }
-    updateDoorUi();
+    refreshPortalState(true);
     updateHud();
   }
 
@@ -551,9 +688,28 @@
   function updateDoorUi() {
     if (!dom.portalActionBtn) return;
     const inLobby = activeMap === "lobby";
-    const canEnter = inLobby && doorOpen;
+    const portalOpen = portalState.phase === "open";
+    const canEnter = inLobby && doorOpen && portalOpen;
     dom.portalActionBtn.disabled = !canEnter;
-    dom.portalActionBtn.textContent = canEnter ? "공연장 입장 (E)" : "문 닫힘 - 호스트 대기";
+
+    if (!inLobby) {
+      dom.portalActionBtn.textContent = "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 (E)";
+      return;
+    }
+
+    if (!doorOpen) {
+      dom.portalActionBtn.textContent = "\uBB38 \uB2EB\uD798 - \uD638\uC2A4\uD2B8 \uB300\uAE30";
+      return;
+    }
+
+    if (!portalOpen) {
+      dom.portalActionBtn.textContent = portalState.phase === "warning"
+        ? "\uAC1C\uBC29 \uC900\uBE44 " + portalState.secondsLeft + "\uCD08"
+        : "\uD3EC\uD0C8 \uCDA9\uC804 " + portalState.secondsLeft + "\uCD08";
+      return;
+    }
+
+    dom.portalActionBtn.textContent = "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 (E)";
   }
 
   function setMap(nextMap, immediate) {
@@ -626,7 +782,7 @@
   }
 
   function updateUiByMap() {
-    if (dom.statusIntent) dom.statusIntent.textContent = MAP_META[activeMap].hint;
+    updatePortalUiCopy(true);
     dom.portalActionBtn.classList.toggle("hidden", activeMap !== "lobby");
     updateDoorUi();
     const showReturn = activeMap === "hall" || fromEmptines;
@@ -1225,7 +1381,17 @@ function updateHud() {
     dom.hudFps.textContent = String(fpsValue);
     dom.hudSeats.textContent = `${activeAudience} / ${CAPACITY}`;
     dom.hudQuality.textContent = ({ low: "\uB0AE\uC74C", medium: "\uBCF4\uD1B5", high: "\uB192\uC74C" })[qualityMode] || "\uBCF4\uD1B5";
-    dom.hudPortal.textContent = doorOpen ? "\uC5F4\uB9BC" : "\uB2EB\uD798";
+    if (!doorOpen) {
+      dom.hudPortal.textContent = "\uB2EB\uD798";
+    } else if (activeMap === "lobby" && portalState.phase !== "open") {
+      dom.hudPortal.textContent = portalState.phase === "warning"
+        ? "\uC900\uBE44 " + portalState.secondsLeft + "s"
+        : "\uCDA9\uC804 " + portalState.secondsLeft + "s";
+    } else if (activeMap === "lobby") {
+      dom.hudPortal.textContent = "\uAC1C\uBC29";
+    } else {
+      dom.hudPortal.textContent = "\uC5F4\uB9BC";
+    }
     dom.hudDrawcalls.textContent = String(renderer.info.render.calls || 0);
 
     if (dom.hudStatus) {
@@ -1399,13 +1565,46 @@ function clampNumber(value, min, max) {
 
   function animateLobby(time) {
     const pulse = 0.5 + 0.5 * Math.sin(time * 2.6);
-    lobbyMap.portalRing.material.emissiveIntensity = 0.74 + pulse * 0.56;
-    lobbyMap.portalCore.material.opacity = 0.18 + pulse * 0.22;
-    lobbyMap.portalGlow.material.opacity = 0.26 + pulse * 0.32;
-    lobbyMap.portalGroup.scale.setScalar(1 + pulse * 0.03);
+    const phase = doorOpen ? portalState.phase : "locked";
+
+    let ringColor = 0x53d8ff;
+    let ringIntensity = 0.38;
+    let coreOpacity = 0.14;
+    let glowOpacity = 0.2;
+    let scale = 1 + pulse * 0.015;
+
+    if (phase === "warning") {
+      ringColor = 0xffb84d;
+      ringIntensity = 0.65 + pulse * 0.42;
+      coreOpacity = 0.17 + pulse * 0.18;
+      glowOpacity = 0.24 + pulse * 0.2;
+      scale = 1 + pulse * 0.024;
+    } else if (phase === "open") {
+      ringColor = 0x35ef8d;
+      ringIntensity = 0.94 + pulse * 0.76;
+      coreOpacity = 0.22 + pulse * 0.24;
+      glowOpacity = 0.34 + pulse * 0.28;
+      scale = 1 + pulse * 0.042;
+    } else if (phase === "locked") {
+      ringColor = 0xff4d73;
+      ringIntensity = 0.26 + pulse * 0.16;
+      coreOpacity = 0.1 + pulse * 0.08;
+      glowOpacity = 0.12 + pulse * 0.1;
+      scale = 0.985 + pulse * 0.01;
+    }
+
+    lobbyMap.portalRing.material.color.setHex(ringColor);
+    lobbyMap.portalRing.material.emissive.setHex(ringColor);
+    lobbyMap.portalCore.material.color.setHex(ringColor);
+    lobbyMap.portalGlow.material.color.setHex(ringColor);
+    lobbyMap.portalRing.material.emissiveIntensity = ringIntensity;
+    lobbyMap.portalCore.material.opacity = coreOpacity;
+    lobbyMap.portalGlow.material.opacity = glowOpacity;
+    lobbyMap.portalGroup.scale.setScalar(scale);
 
     lobbyMap.corridorStrips.forEach((strip, index) => {
-      strip.material.emissiveIntensity = 0.18 + Math.sin(time * 2.2 + index * 0.4) * 0.14;
+      const phaseBoost = phase === "open" ? 0.22 : phase === "warning" ? 0.14 : 0.08;
+      strip.material.emissiveIntensity = 0.12 + phaseBoost + Math.sin(time * 2.2 + index * 0.4) * 0.12;
     });
   }
 
@@ -1562,6 +1761,7 @@ function clampNumber(value, min, max) {
 
     const delta = clock.getDelta();
     const elapsed = clock.getElapsedTime();
+    refreshPortalState(false);
 
     if (cameraTween) {
       const progress = Math.min((performance.now() - cameraTween.start) / cameraTween.duration, 1);
@@ -2791,6 +2991,8 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     return seat;
   }
 })()
+
+
 
 
 

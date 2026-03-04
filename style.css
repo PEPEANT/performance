@@ -726,3 +726,54 @@ p {
   }
 }
 
+
+#portal-phase-note {
+  margin-top: 6px;
+  color: #cfe7ff;
+  font-size: 0.73rem;
+  letter-spacing: 0.01em;
+}
+
+#portal-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 13;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  background: radial-gradient(circle at 50% 45%, rgba(74, 223, 134, 0.18), rgba(4, 8, 15, 0.78));
+  backdrop-filter: blur(3px);
+  transition: opacity 260ms ease, visibility 260ms ease;
+}
+
+#portal-transition.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.portal-transition-card {
+  min-width: min(420px, calc(100vw - 32px));
+  border-radius: 14px;
+  border: 1px solid rgba(152, 230, 184, 0.65);
+  background: rgba(10, 24, 18, 0.82);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.42);
+  padding: 16px 18px;
+  text-align: center;
+}
+
+#portal-transition-label {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(182, 248, 207, 0.95);
+}
+
+#portal-transition-title {
+  margin: 0;
+  font-size: clamp(1.02rem, 2.5vw, 1.32rem);
+  font-weight: 800;
+  color: #f0fff6;
+}
