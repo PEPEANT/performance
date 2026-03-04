@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const CAPACITY = 50;
   const ROWS = 5;
   const COLS = 10;
@@ -273,7 +273,8 @@
 
   window.addEventListener("keydown", (event) => {
     const key = String(event.key || "").toLowerCase();
-    setMovementKeyState(key, true);
+    const code = String(event.code || "").toLowerCase();
+    setMovementKeyState(key, code, true);
 
     const tag = String(event.target?.tagName || "").toLowerCase();
     const typing = tag === "input" || tag === "select" || tag === "textarea";
@@ -287,7 +288,7 @@
 
     if (event.repeat) return;
 
-    if (key === " " || key === "spacebar") {
+    if (key === " " || key === "space" || key === "spacebar" || code === "space") {
       event.preventDefault();
     }
 
@@ -304,7 +305,8 @@
 
   window.addEventListener("keyup", (event) => {
     const key = String(event.key || "").toLowerCase();
-    setMovementKeyState(key, false);
+    const code = String(event.code || "").toLowerCase();
+    setMovementKeyState(key, code, false);
   });
 
   window.addEventListener("pointerdown", (event) => {
@@ -374,11 +376,11 @@
   if (dom.queueLoopBtn) {
     dom.queueLoopBtn.addEventListener("click", () => {
       if (!canControlShowOps()) {
-        updateQueueUi("?몄뒪???꾩슜 湲곕뒫?낅땲??");
+        updateQueueUi("?紐꾨뮞???袁⑹뒠 疫꿸퀡???낅빍??");
         return;
       }
       queueLoop = !queueLoop;
-      updateQueueUi(queueLoop ? "猷⑦봽 耳쒖쭚" : "猷⑦봽 爰쇱쭚");
+      updateQueueUi(queueLoop ? "루프 켜짐" : "루프 꺼짐");
     });
   }
   if (dom.queueSaveBtn) {
@@ -405,28 +407,116 @@
   loadQueueFromStorage(true);
   setDoorOpen(true);
   updateQueueUi();
+  installDebugBridge();
+
+  function installDebugBridge() {
+    if (!adminUiMode) return;
+    if (typeof window === "undefined") return;
+
+    window.__performanceDebug = {
+      getState() {
+        return {
+          activeMap,
+          firstPersonEnabled,
+          pointerLocked,
+          isHostClient,
+          socketConnected,
+          selfSocketId,
+          roomPopulation,
+          playerFootY,
+          playerVelocityY,
+          playerGrounded,
+          moveState: { ...moveState },
+          camera: {
+            x: camera.position.x,
+            y: camera.position.y,
+            z: camera.position.z,
+            yaw: playerYaw,
+            pitch: playerPitch
+          }
+        };
+      },
+      emitStateNow() {
+        const payload = getLocalPlayerState();
+        if (socketConnected && socket) {
+          socket.emit("player:state", payload);
+        }
+        return payload;
+      },
+      forceJump() {
+        moveState.jump = true;
+        return this.getState();
+      },
+      teleport(x, z, mapName) {
+        if (mapName === "lobby" || mapName === "hall") {
+          setMap(mapName, true);
+        }
+        if (Number.isFinite(Number(x))) camera.position.x = Number(x);
+        if (Number.isFinite(Number(z))) camera.position.z = Number(z);
+        syncPlayerHeightToGround({ resetVelocity: true });
+        emitLocalPlayerState(true);
+        return this.getState();
+      },
+      setVertical(footY, velocityY = 0, grounded = false) {
+        playerFootY = Number.isFinite(Number(footY)) ? Number(footY) : playerFootY;
+        playerVelocityY = Number.isFinite(Number(velocityY)) ? Number(velocityY) : playerVelocityY;
+        playerGrounded = Boolean(grounded);
+        camera.position.y = playerFootY + PLAYER_EYE_HEIGHT[activeMap];
+        return this.getState();
+      },
+      simulateStep(options = {}) {
+        const steps = Math.max(1, Math.min(600, Number(options.steps) || 1));
+        const delta = Math.max(1 / 240, Math.min(0.1, Number(options.delta) || 1 / 60));
+        const forward = Number(options.forward) || 0;
+        const strafe = Number(options.strafe) || 0;
+        const withJump = Boolean(options.jump);
+
+        if (!firstPersonEnabled) {
+          setFirstPersonEnabled(true, { requestLock: false });
+        }
+
+        const prevState = { ...moveState };
+        moveState.forward = forward > 0;
+        moveState.backward = forward < 0;
+        moveState.right = strafe > 0;
+        moveState.left = strafe < 0;
+        moveState.run = Boolean(options.run);
+        if (withJump) {
+          moveState.jump = true;
+        }
+
+        for (let i = 0; i < steps; i += 1) {
+          updateFirstPersonMovement(delta);
+        }
+
+        Object.assign(moveState, prevState);
+        emitLocalPlayerState(true);
+        return this.getState();
+      }
+    };
+  }
 
   function enterHall() {
     if (activeMap !== "lobby" || transitionInFlight) return;
     if (!doorOpen) {
-      dom.loading.textContent = "臾몄씠 ?ロ? ?덉뒿?덈떎. ?몄뒪?멸? 臾몄쓣 ?댁뼱???낆옣?????덉뒿?덈떎.";
+      dom.loading.textContent = "?얜챷????? ??됰뮸??덈뼄. ?紐꾨뮞?硫? ?얜챷????곷선????놁삢??????됰뮸??덈뼄.";
       dom.loading.classList.remove("hidden");
       setTimeout(() => {
         if (!transitionInFlight) {
           dom.loading.classList.add("hidden");
-          dom.loading.textContent = "濡쒕퉬 援ъ꽦 以?..";
+          dom.loading.textContent = "嚥≪뮆???닌딄쉐 餓?..";
         }
       }, 900);
       return;
     }
     transitionInFlight = true;
-    dom.loading.textContent = "?ы깉 ?듦낵 以?..";
+    dom.loading.textContent = "??源????궢 餓?..";
     dom.loading.classList.remove("hidden");
     setTimeout(() => {
       setMap("hall", true);
       setTimeout(() => {
         dom.loading.classList.add("hidden");
-        dom.loading.textContent = "濡쒕퉬 援ъ꽦 以?..";
+        dom.loading.textContent = "嚥≪뮆???닌딄쉐 餓?..";
         transitionInFlight = false;
       }, 220);
     }, 420);
@@ -441,7 +531,7 @@
     doorOpen = next;
     doorTarget = doorOpen ? 1 : 0;
     if (dom.hostDoorBtn && isHostClient) {
-      dom.hostDoorBtn.textContent = doorOpen ? "?몄뒪??臾??リ린" : "?몄뒪??臾??닿린";
+      dom.hostDoorBtn.textContent = doorOpen ? "?紐꾨뮞??????る┛" : "?紐꾨뮞??????용┛";
     }
     if (broadcast && socketConnected && socket && isHostClient) {
       socket.emit("door:set", { open: doorOpen, ts: Date.now() });
@@ -607,7 +697,7 @@ function applyQuality() {
       stageVideoReady = false;
       updateShowStartButton();
       const bgSrc = SHOW_VIDEO_PATH;
-      updateQueueUi(`諛곌꼍 ?곸긽 濡쒕뱶 ?ㅽ뙣: ${bgSrc}`);
+      updateQueueUi(`獄쏄퀗瑗??怨멸맒 嚥≪뮆諭???쎈솭: ${bgSrc}`);
       appendChatLine("시스템", `배경 영상 로드 실패: ${bgSrc}`, "system");
     });
 
@@ -640,7 +730,7 @@ function applyQuality() {
     chroma.addEventListener("error", () => {
       chromaVideoReady = false;
       const failedClipPath = String(chroma.getAttribute("src") || CLIP_VIDEO_PATHS[DEFAULT_CLIP_ID]);
-      updateQueueUi(`?쇳룷癒??대┰ 濡쒕뱶 ?ㅽ뙣: ${failedClipPath}`);
+      updateQueueUi(`??노７??????嚥≪뮆諭???쎈솭: ${failedClipPath}`);
       appendChatLine("시스템", `퍼포머 클립 로드 실패: ${failedClipPath}`, "system");
     });
 
@@ -904,7 +994,7 @@ function toggleQueueRecording() {
     }
 
     if (!canControlShowOps()) {
-      updateQueueUi("?몄뒪???꾩슜 湲곕뒫?낅땲??");
+      updateQueueUi("?紐꾨뮞???袁⑹뒠 疫꿸퀡???낅빍??");
       return;
     }
 
@@ -928,7 +1018,7 @@ function startQueuePlayback(resetSong) {
       return;
     }
     if (!canControlShowOps()) {
-      updateQueueUi("?몄뒪???꾩슜 湲곕뒫?낅땲??");
+      updateQueueUi("?紐꾨뮞???袁⑹뒠 疫꿸퀡???낅빍??");
       return;
     }
     if (queueEvents.length === 0) {
@@ -966,7 +1056,7 @@ function processQueuePlayback() {
 
 function saveQueueToStorage() {
     if (!canControlShowOps()) {
-      updateQueueUi("?몄뒪???꾩슜 湲곕뒫?낅땲??");
+      updateQueueUi("?紐꾨뮞???袁⑹뒠 疫꿸퀡???낅빍??");
       return;
     }
     try {
@@ -1018,7 +1108,7 @@ function loadQueueFromStorage(silent) {
 
 function clearQueueEvents() {
     if (!canControlShowOps()) {
-      updateQueueUi("?몄뒪???꾩슜 湲곕뒫?낅땲??");
+      updateQueueUi("?紐꾨뮞???袁⑹뒠 疫꿸퀡???낅빍??");
       return;
     }
     queueRecording = false;
@@ -1574,13 +1664,13 @@ function clampNumber(value, min, max) {
     dom.fpsToggleBtn.classList.toggle("active", firstPersonEnabled);
   }
 
-function setMovementKeyState(key, pressed) {
-    if (key === "w" || key === "arrowup") moveState.forward = pressed;
-    if (key === "s" || key === "arrowdown") moveState.backward = pressed;
-    if (key === "a" || key === "arrowleft") moveState.left = pressed;
-    if (key === "d" || key === "arrowright") moveState.right = pressed;
-    if (key === "shift") moveState.run = pressed;
-    if (key === " " || key === "space" || key === "spacebar") moveState.jump = pressed;
+function setMovementKeyState(key, code, pressed) {
+    if (key === "w" || key === "arrowup" || code === "keyw") moveState.forward = pressed;
+    if (key === "s" || key === "arrowdown" || code === "keys") moveState.backward = pressed;
+    if (key === "a" || key === "arrowleft" || code === "keya") moveState.left = pressed;
+    if (key === "d" || key === "arrowright" || code === "keyd") moveState.right = pressed;
+    if (key === "shift" || code === "shiftleft" || code === "shiftright") moveState.run = pressed;
+    if (key === " " || key === "space" || key === "spacebar" || code === "space") moveState.jump = pressed;
   }
 
   function updateFirstPersonMovement(delta) {
@@ -2000,7 +2090,7 @@ function createPlayerAvatar(name) {
     );
     icon.position.set(0, 2.07, 0.06);
 
-    avatar.userData.playerName = String(name || "?뚮젅?댁뼱");
+    avatar.userData.playerName = String(name || "???쟿??곷선");
     avatar.add(body, head, badge, icon);
     return avatar;
   }
@@ -2259,7 +2349,7 @@ function createLobbyMap(THREERef, targetScene, mobile) {
       corridorStrips.push(strip);
     }
 
-    // 濡쒕퉬???볦? 硫?z=3 寃쎄퀎)??怨듭뿰???곌껐臾?諛곗튂
+    // 嚥≪뮆????蹂? 筌?z=3 野껋럡?????⑤벊肉???怨뚭퍙??獄쏄퀣??
     const doorZ = 22.65;
     const doorFrameMat = new THREERef.MeshStandardMaterial({ color: 0x1d273b, roughness: 0.64, metalness: 0.32 });
     const doorFrameLeft = new THREERef.Mesh(new THREERef.BoxGeometry(2.1, 8, 0.7), wallMat);
@@ -2675,6 +2765,18 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     return seat;
   }
 })()
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
