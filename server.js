@@ -246,18 +246,9 @@ function findHostCandidate(room) {
   return null;
 }
 
-function findFirstPlayerId(room) {
-  for (const player of room.players.values()) {
-    if (player) {
-      return player.id;
-    }
-  }
-  return null;
-}
-
 function ensureHost(room) {
   if (room.hostId && room.players.has(room.hostId)) return;
-  assignHost(room, findHostCandidate(room) || findFirstPlayerId(room));
+  assignHost(room, findHostCandidate(room));
 }
 
 function leaveCurrentRoom(socket) {
@@ -590,3 +581,4 @@ server.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`performance server listening on :${PORT}`);
 });
+

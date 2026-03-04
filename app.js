@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const CAPACITY = 50;
   const ROWS = 5;
   const COLS = 10;
@@ -50,7 +50,10 @@
   const fromEmptines = String(query.get("from") || "").trim().toLowerCase() === "emptines";
   const adminUiMode = ["1", "true", "yes", "on"].includes(String(query.get("admin") || "").trim().toLowerCase());
   const chatEnabled = adminUiMode;
-  let hostMode = String(query.get("host") || "1").trim().toLowerCase() !== "0";
+  const hostParamRaw = String(query.get("host") || "").trim().toLowerCase();
+  const explicitHostTrue = ["1", "true", "yes", "on", "host"].includes(hostParamRaw);
+  const explicitHostFalse = ["0", "false", "no", "off", "player"].includes(hostParamRaw);
+  let hostMode = explicitHostTrue ? true : explicitHostFalse ? false : adminUiMode;
   let networkRoomId = String(query.get("room") || "main")
     .trim()
     .toLowerCase()
@@ -2009,6 +2012,15 @@ function emitLocalPlayerState(force) {
     socket.emit("player:state", getLocalPlayerState());
   }
 
+function updateNetworkNoteStatus() {
+    if (!dom.networkNote) return;
+    const requested = hostMode ? "호스트" : "플레이어";
+    const granted = roomHostId
+      ? (roomHostId === selfSocketId ? "내가 호스트" : "다른 유저가 호스트")
+      : "호스트 없음";
+    dom.networkNote.textContent = `요청 역할: ${requested} | 현재 권한: ${granted} | 룸 ${networkRoomId}`;
+  }
+
 function setHostRole(nextHostId) {
     roomHostId = nextHostId || null;
     isHostClient = roomHostId ? roomHostId === selfSocketId : hostMode;
@@ -2034,6 +2046,7 @@ function setHostRole(nextHostId) {
     updateShowStartButton();
     updateDoorUi();
     updateHud();
+    updateNetworkNoteStatus();
   }
 
 function applyRoomSnapshot(snapshot) {
@@ -2176,6 +2189,7 @@ function setupRealtime() {
       emitLocalPlayerState(true);
       updateShowStartButton();
       updateHud();
+      updateNetworkNoteStatus();
     });
 
     socket.on("disconnect", () => {
@@ -2186,6 +2200,7 @@ function setupRealtime() {
       appendChatLine("\uC2DC\uC2A4\uD15C", "\uC11C\uBC84 \uC5F0\uACB0\uC774 \uB04A\uACBC\uC2B5\uB2C8\uB2E4. \uC7AC\uC5F0\uACB0 \uC911\uC785\uB2C8\uB2E4.", "system");
       updateShowStartButton();
       updateHud();
+      updateNetworkNoteStatus();
     });
 
     socket.on("room:joined", (payload) => {
@@ -2394,9 +2409,7 @@ function setupNetworkProfileUi() {
     dom.networkRoomInput.value = networkRoomId;
     dom.networkNameInput.value = requestedPlayerName;
 
-    if (dom.networkNote) {
-      dom.networkNote.textContent = `현재 설정: ${hostMode ? "호스트" : "플레이어"} | 룸 ${networkRoomId}`;
-    }
+    updateNetworkNoteStatus();
 
     dom.networkApplyBtn.addEventListener("click", () => {
       const nextHostMode = String(dom.networkRoleSelect.value || "host").trim().toLowerCase() !== "player";
@@ -2990,24 +3003,4 @@ function createLobbyMap(THREERef, targetScene, mobile) {
 
     return seat;
   }
-})()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+})();
