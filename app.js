@@ -1941,9 +1941,9 @@ function applyShowStateFromNetwork(showState, force) {
         startShow({ broadcast: false, allowNonHost: true, startOffsetSeconds: offsetSec });
       } else {
         pendingShowStartFromHost = true;
-        updateQueueUi("\uD638\uC2A4\uD2B8\uAC00 \uACF5\uC5F0\uC744 \uC2DC\uC791\uD588\uC2B5\uB2C8\uB2E4.");
         updateShowStartButton();
       }
+      updateQueueUi("\uD638\uC2A4\uD2B8\uAC00 \uACF5\uC5F0\uC744 \uC2DC\uC791\uD588\uC2B5\uB2C8\uB2E4.");
       applyLatestNetworkClip({ force: true });
       return;
     }
