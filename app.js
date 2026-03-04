@@ -218,6 +218,7 @@
   let stateSendAccumulator = 0;
   let pendingShowStartFromHost = false;
   let lastNetworkShowPlaying = null;
+  let lastNetworkShowStartedAtMs = 0;
   let clientDisplayName = requestedPlayerName || ("player-" + Math.floor(Math.random() * 9000 + 1000));
 
   dom.portalActionBtn.addEventListener("click", () => enterHall());
@@ -442,7 +443,7 @@
     }
 
     if (activeMap === "hall" && pendingShowStartFromHost && showPlaying) {
-      startShow({ broadcast: false, allowNonHost: true });
+      startShow({ broadcast: false, allowNonHost: true, startOffsetSeconds: getNetworkShowOffsetSeconds() });
     }
 
     emitLocalPlayerState(true);
@@ -540,7 +541,7 @@ function applyQuality() {
         updateShowStartButton();
 
         if (pendingShowStartFromHost && showPlaying && activeMap === "hall") {
-          startShow({ broadcast: false, allowNonHost: true });
+          startShow({ broadcast: false, allowNonHost: true, startOffsetSeconds: getNetworkShowOffsetSeconds() });
         }
       },
       { once: true }
@@ -615,6 +616,7 @@ function applyQuality() {
     const { broadcast = false } = options;
     showPlaying = false;
     pendingShowStartFromHost = false;
+    lastNetworkShowStartedAtMs = 0;
     setScreenVideoEnabled(false);
 
     if (stageVideo) {
@@ -639,8 +641,18 @@ function applyQuality() {
     }
   }
 
+  function getNetworkShowOffsetSeconds() {
+    if (!socketConnected || isHostClient) {
+      return 0;
+    }
+    if (!Number.isFinite(lastNetworkShowStartedAtMs) || lastNetworkShowStartedAtMs <= 0) {
+      return 0;
+    }
+    return Math.max(0, (Date.now() - lastNetworkShowStartedAtMs) / 1000);
+  }
+
   function startShow(options = {}) {
-    const { broadcast = true, allowNonHost = false } = options;
+    const { broadcast = true, allowNonHost = false, startOffsetSeconds = 0 } = options;
 
     if (socketConnected && broadcast && !isHostClient && !allowNonHost) {
       updateQueueUi("\uD638\uC2A4\uD2B8\uB9CC \uACF5\uC5F0\uC744 \uC2DC\uC791\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
@@ -657,7 +669,13 @@ function applyQuality() {
     pendingShowStartFromHost = false;
     showPlaying = true;
     stageVideo.pause();
-    stageVideo.currentTime = 0;
+    const offsetSec = Math.max(0, Number(startOffsetSeconds) || 0);
+    if (Number.isFinite(stageVideo.duration) && stageVideo.duration > 0) {
+      const safeMax = Math.max(0, stageVideo.duration - 0.05);
+      stageVideo.currentTime = Math.min(offsetSec, safeMax);
+    } else {
+      stageVideo.currentTime = offsetSec;
+    }
     stageVideo.muted = false;
     stageVideo.volume = 1.0;
     setScreenVideoEnabled(true);
@@ -1507,26 +1525,31 @@ function removeRemotePlayerById(playerId) {
 
 function applyShowStateFromNetwork(showState, force) {
     const nextPlaying = Boolean(showState && showState.playing);
+    const startedAt = Number((showState && showState.startedAt) || 0);
     if (!force && lastNetworkShowPlaying === nextPlaying) {
       return;
     }
 
     lastNetworkShowPlaying = nextPlaying;
+    if (startedAt > 0) {
+      lastNetworkShowStartedAtMs = startedAt;
+    }
 
     if (nextPlaying) {
       showPlaying = true;
+      const offsetSec = getNetworkShowOffsetSeconds();
       if (activeMap === "hall" && stageVideoReady) {
-        startShow({ broadcast: false, allowNonHost: true });
+        startShow({ broadcast: false, allowNonHost: true, startOffsetSeconds: offsetSec });
       } else {
         pendingShowStartFromHost = true;
-        updateQueueUi("\uD638\uC2A4\uD2B8\uAC00 \uACF5\uC5F0\uC744 \uC2DC\uC791\uD588\uC2B5\uB2C8\uB2E4.");
+        updateQueueUi("호스트가 공연을 시작했습니다.");
         updateShowStartButton();
       }
       return;
     }
 
     stopShowLocal({ broadcast: false });
-    updateQueueUi("\uD638\uC2A4\uD2B8\uAC00 \uACF5\uC5F0\uC744 \uC911\uC9C0\uD588\uC2B5\uB2C8\uB2E4.");
+    updateQueueUi("호스트가 공연을 중지했습니다.");
   }
 
 function setupRealtime() {
@@ -2350,6 +2373,10 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     return seat;
   }
 })()
+
+
+
+
 
 
 
