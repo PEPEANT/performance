@@ -203,7 +203,11 @@ function makeRoomIfNeeded(roomId) {
       by: null,
       activeClip: 0
     },
-    doorOpen: true
+    doorOpen: true,
+    fxState: {
+      particles: true,
+      lights: true
+    }
   };
   rooms.set(roomId, room);
   return room;
@@ -230,6 +234,7 @@ function buildSnapshot(room) {
     hostId: room.hostId,
     showState: room.showState,
     doorOpen: room.doorOpen,
+    fxState: room.fxState,
     players: Array.from(room.players.values()).map((p) => serializePlayer(p)),
     serverNow: Date.now()
   };
@@ -351,7 +356,9 @@ function handleJoin(socket, payload) {
   socketToRoom.set(socket.id, roomId);
   socket.join(room.key);
 
-  if (!room.hostId || !room.players.has(room.hostId)) {
+  if (player.wantsHost && room.hostId !== socket.id) {
+    assignHost(room, socket.id);
+  } else if (!room.hostId || !room.players.has(room.hostId)) {
     ensureHost(room);
   }
 
@@ -361,6 +368,7 @@ function handleJoin(socket, payload) {
     hostId: room.hostId,
     showState: room.showState,
     doorOpen: room.doorOpen,
+    fxState: room.fxState,
     players: Array.from(room.players.values()).map((p) => serializePlayer(p)),
     capacity: MAX_ROOM_SIZE,
     requestedRole: player.wantsHost ? "host" : "player",
@@ -450,7 +458,7 @@ function handlePerformerClip(socket, payload) {
   if (room.hostId !== socket.id) {
     socket.emit("room:error", {
       code: "HOST_ONLY",
-      message: "호스트만 클립을 제어할 수 있습니다.",
+      message: "\ud638\uc2a4\ud2b8\ub9cc \ud074\ub9bd\uc744 \uc81c\uc5b4\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.",
       ts: Date.now()
     });
     return;
@@ -486,7 +494,7 @@ function handleDoorSet(socket, payload) {
   if (room.hostId !== socket.id) {
     socket.emit("room:error", {
       code: "HOST_ONLY",
-      message: "호스트만 문 상태를 변경할 수 있습니다.",
+      message: "\ud638\uc2a4\ud2b8\ub9cc \ubb38 \uc0c1\ud0dc\ub97c \ubcc0\uacbd\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.",
       ts: Date.now()
     });
     return;
@@ -507,6 +515,66 @@ function handleDoorSet(socket, payload) {
   });
   emitSnapshot(room);
 }
+function handleFxSet(socket, payload) {
+  const roomId = socketToRoom.get(socket.id);
+  if (!roomId) return;
+
+  const room = rooms.get(roomId);
+  const player = room?.players.get(socket.id);
+  if (!room || !player) return;
+
+  if (room.hostId !== socket.id) {
+    socket.emit("room:error", {
+      code: "HOST_ONLY",
+      message: "\ud638\uc2a4\ud2b8\ub9cc \uacf5\uc5f0 \ud6a8\uacfc\ub97c \ubcc0\uacbd\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.",
+      ts: Date.now()
+    });
+    return;
+  }
+
+  const nextFxState = { ...room.fxState };
+  let stateChanged = false;
+
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "particles")) {
+    const nextParticles = sanitizeBooleanIntent(payload?.particles, nextFxState.particles);
+    if (nextParticles !== nextFxState.particles) {
+      nextFxState.particles = nextParticles;
+      stateChanged = true;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "lights")) {
+    const nextLights = sanitizeBooleanIntent(payload?.lights, nextFxState.lights);
+    if (nextLights !== nextFxState.lights) {
+      nextFxState.lights = nextLights;
+      stateChanged = true;
+    }
+  }
+
+  const burst = sanitizeBooleanIntent(payload?.burst, false);
+
+  if (!stateChanged && !burst) {
+    return;
+  }
+
+  if (stateChanged) {
+    room.fxState = nextFxState;
+  }
+
+  io.to(room.key).emit("fx:state", {
+    roomId: room.roomId,
+    hostId: room.hostId,
+    fxState: room.fxState,
+    burst,
+    by: socket.id,
+    ts: Date.now()
+  });
+
+  if (stateChanged) {
+    emitSnapshot(room);
+  }
+}
+
 function handleShowStart(socket, payload) {
   const roomId = socketToRoom.get(socket.id);
   if (!roomId) return;
@@ -518,7 +586,7 @@ function handleShowStart(socket, payload) {
   if (room.hostId !== socket.id) {
     socket.emit("room:error", {
       code: "HOST_ONLY",
-      message: "호스트만 공연을 시작할 수 있습니다.",
+      message: "\ud638\uc2a4\ud2b8\ub9cc \uacf5\uc5f0\uc744 \uc2dc\uc791\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.",
       ts: Date.now()
     });
     return;
@@ -551,7 +619,7 @@ function handleShowStop(socket) {
   if (room.hostId !== socket.id) {
     socket.emit("room:error", {
       code: "HOST_ONLY",
-      message: "호스트만 공연을 중지할 수 있습니다.",
+      message: "\ud638\uc2a4\ud2b8\ub9cc \uacf5\uc5f0\uc744 \uc911\uc9c0\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.",
       ts: Date.now()
     });
     return;
@@ -578,6 +646,7 @@ io.on("connection", (socket) => {
   socket.on("chat:send", (payload) => handleChatSend(socket, payload));
   socket.on("show:start", (payload) => handleShowStart(socket, payload));
   socket.on("door:set", (payload) => handleDoorSet(socket, payload));
+  socket.on("fx:set", (payload) => handleFxSet(socket, payload));
   socket.on("show:stop", () => handleShowStop(socket));
   socket.on("performer:clip", (payload) => handlePerformerClip(socket, payload));
 

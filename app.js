@@ -73,10 +73,9 @@
     statLayout: document.getElementById("stat-layout"),
     statSeats: document.getElementById("stat-seats"),
     presetButtons: Array.from(document.querySelectorAll("[data-preset]")),
-    modeButtons: Array.from(document.querySelectorAll("[data-show-mode]")),
-    occupancyRange: document.getElementById("occupancy-range"),
-    occupancyRow: document.getElementById("occupancy-row"),
-    occupancyLabel: document.getElementById("occupancy-label"),
+    fxParticlesBtn: document.getElementById("fx-particles-btn"),
+    fxLightsBtn: document.getElementById("fx-lights-btn"),
+    fxFireworksBtn: document.getElementById("fx-fireworks-btn"),
     qualitySelect: document.getElementById("quality-select"),
     portalActionBtn: document.getElementById("portal-action-btn"),
     portalPhaseNote: document.getElementById("portal-phase-note"),
@@ -156,8 +155,12 @@
   const LOBBY_PORTAL_ENTRY_RADIUS = 4.8;
   const LOBBY_PORTAL_ENTRY_RADIUS_SQ = LOBBY_PORTAL_ENTRY_RADIUS * LOBBY_PORTAL_ENTRY_RADIUS;
 
-  dom.statCapacity.textContent = String(CAPACITY);
-  dom.statLayout.textContent = `${ROWS} x ${COLS}`;
+  if (dom.statCapacity) {
+    dom.statCapacity.textContent = String(CAPACITY);
+  }
+  if (dom.statLayout) {
+    dom.statLayout.textContent = `${ROWS} x ${COLS}`;
+  }
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x050914);
@@ -207,7 +210,10 @@
   let activeMap = "lobby";
   let activePreset = "lobby_entry";
   let activeAudience = CAPACITY;
-  let showMode = "live";
+  const showMode = "live";
+  let fxParticlesEnabled = true;
+  let fxLightsEnabled = true;
+  let pendingFireworkBursts = 0;
   let qualityMode = isMobile ? "low" : "medium";
   let cameraTween = null;
   let transitionInFlight = false;
@@ -370,23 +376,24 @@
     button.addEventListener("click", () => applyPreset(button.dataset.preset, false));
   });
 
-  dom.modeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      showMode = SHOW_MODES[button.dataset.showMode] ? button.dataset.showMode : "live";
-      dom.modeButtons.forEach((b) => b.classList.toggle("active", b === button));
+  if (dom.fxParticlesBtn) {
+    dom.fxParticlesBtn.addEventListener("click", () => {
+      if (!canControlShowOps() || activeMap !== "hall") return;
+      applyFxState({ particles: !fxParticlesEnabled });
     });
-  });
+  }
 
-  if (dom.occupancyRange) {
-    dom.occupancyRange.addEventListener("input", () => {
-      if (!adminUiMode) return;
-      activeAudience = Math.max(0, Math.min(CAPACITY, Number(dom.occupancyRange.value) || 0));
-      if (dom.occupancyLabel) {
-        dom.occupancyLabel.textContent = `${activeAudience} / ${CAPACITY}`;
-      }
-      if (dom.statSeats) {
-        dom.statSeats.textContent = String(activeAudience);
-      }
+  if (dom.fxLightsBtn) {
+    dom.fxLightsBtn.addEventListener("click", () => {
+      if (!canControlShowOps() || activeMap !== "hall") return;
+      applyFxState({ lights: !fxLightsEnabled });
+    });
+  }
+
+  if (dom.fxFireworksBtn) {
+    dom.fxFireworksBtn.addEventListener("click", () => {
+      if (!canControlShowOps() || activeMap !== "hall") return;
+      requestFireworkBurst();
     });
   }
 
@@ -881,14 +888,79 @@
     dom.returnLobbyBtn.classList.toggle("hidden", !showReturn);
     dom.returnLobbyBtn.textContent = activeMap === "hall" ? "\uB85C\uBE44\uB85C \uB3CC\uC544\uAC00\uAE30" : "EMPTINES\uB85C \uBCF5\uADC0";
     const hallOnly = activeMap === "hall";
-    dom.modeButtons.forEach((button) => {
-      button.disabled = !hallOnly;
-    });
-    dom.occupancyRange.disabled = !hallOnly;
+    updateFxButtons();
     updatePresetButtons();
     updateQueueUi();
     if (firstPersonEnabled) {
       syncYawPitchFromCamera();
+    }
+  }
+
+function updateFxButtons() {
+    const hallOnly = activeMap === "hall";
+    const canControl = hallOnly && canControlShowOps();
+
+    if (dom.fxParticlesBtn) {
+      dom.fxParticlesBtn.classList.toggle("active", fxParticlesEnabled);
+      dom.fxParticlesBtn.textContent = fxParticlesEnabled ? "\ud30c\ud2f0\ud074 \ub044\uae30" : "\ud30c\ud2f0\ud074 \ucf1c\uae30";
+      dom.fxParticlesBtn.disabled = !canControl;
+    }
+
+    if (dom.fxLightsBtn) {
+      dom.fxLightsBtn.classList.toggle("active", fxLightsEnabled);
+      dom.fxLightsBtn.textContent = fxLightsEnabled ? "\ubd88 \ub044\uae30" : "\ubd88 \ucf1c\uae30";
+      dom.fxLightsBtn.disabled = !canControl;
+    }
+
+    if (dom.fxFireworksBtn) {
+      dom.fxFireworksBtn.disabled = !canControl;
+    }
+  }
+
+  function applyFxState(nextState, options = {}) {
+    const { broadcast = socketConnected && isHostClient, fromNetwork = false } = options;
+    let changed = false;
+
+    if (nextState && Object.prototype.hasOwnProperty.call(nextState, "particles")) {
+      const nextParticles = Boolean(nextState.particles);
+      if (fxParticlesEnabled !== nextParticles) {
+        fxParticlesEnabled = nextParticles;
+        changed = true;
+      }
+    }
+
+    if (nextState && Object.prototype.hasOwnProperty.call(nextState, "lights")) {
+      const nextLights = Boolean(nextState.lights);
+      if (fxLightsEnabled !== nextLights) {
+        fxLightsEnabled = nextLights;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      applyQuality();
+    }
+
+    updateFxButtons();
+
+    if (broadcast && socketConnected && isHostClient && socket && !fromNetwork) {
+      socket.emit("fx:set", {
+        particles: fxParticlesEnabled,
+        lights: fxLightsEnabled,
+        ts: Date.now()
+      });
+    }
+  }
+
+  function requestFireworkBurst(options = {}) {
+    const { broadcast = socketConnected && isHostClient, fromNetwork = false } = options;
+    pendingFireworkBursts += 1;
+
+    if (broadcast && socketConnected && isHostClient && socket && !fromNetwork) {
+      socket.emit("fx:set", {
+        burst: true,
+        ts: Date.now()
+      });
     }
   }
 
@@ -900,7 +972,7 @@ function applyQuality() {
     const shadowSize = quality.shadows ? (isMobile ? 512 : 1024) : 256;
     hallMap.stageWash.shadow.mapSize.width = shadowSize;
     hallMap.stageWash.shadow.mapSize.height = shadowSize;
-    hallMap.particles.visible = quality.particles && activeMap === "hall";
+    hallMap.particles.visible = quality.particles && fxParticlesEnabled && activeMap === "hall";
     updateHud();
   }
 
@@ -1512,26 +1584,18 @@ function clampNumber(value, min, max) {
   function applyUiVisibilityMode() {
     const hideOptionalUi = !adminUiMode;
     setElementHidden(dom.introStats, hideOptionalUi);
-    setElementHidden(dom.occupancyRow, hideOptionalUi);
     setElementHidden(dom.networkPanel, hideOptionalUi);
     setElementHidden(dom.chatUi, !chatEnabled);
     setElementHidden(dom.hudSeatsChip, hideOptionalUi);
     setElementHidden(dom.hudPlayersRow, true);
     setElementHidden(dom.statCapacityCard, true);
 
-    if (hideOptionalUi) {
-      activeAudience = CAPACITY;
-      if (dom.occupancyRange) {
-        dom.occupancyRange.value = String(CAPACITY);
-        dom.occupancyRange.disabled = true;
-      }
-      if (dom.occupancyLabel) {
-        dom.occupancyLabel.textContent = "";
-      }
-      if (dom.statSeats) {
-        dom.statSeats.textContent = "";
-      }
+    activeAudience = CAPACITY;
+    if (dom.statSeats) {
+      dom.statSeats.textContent = hideOptionalUi ? "" : String(activeAudience);
     }
+
+    updateFxButtons();
   }
 
   function getLobbyHalfWidth(z) {
@@ -1742,15 +1806,18 @@ function clampNumber(value, min, max) {
     }
     hallMap.edgeMat.emissiveIntensity = 0.42 + Math.sin(time * 3.8) * (0.12 + mode.screenPulse * 0.42);
 
+    const lightsActive = fxLightsEnabled;
+    hallMap.stageWash.intensity = lightsActive ? 1.8 : 0.18;
+
     hallMap.movingLights.forEach((entry, index) => {
       entry.target.position.x = Math.sin(time * entry.speedX + entry.offset) * 18;
       entry.target.position.z = -58 + Math.cos(time * entry.speedZ + entry.offset + index * 0.3) * 12;
       entry.beam.lookAt(entry.target.position);
-      entry.light.intensity = entry.baseIntensity * mode.lightBoost;
-      entry.beam.material.opacity = 0.08 + mode.screenPulse * 0.12;
+      entry.light.intensity = lightsActive ? entry.baseIntensity * mode.lightBoost : 0.02;
+      entry.beam.material.opacity = lightsActive ? 0.08 + mode.screenPulse * 0.12 : 0.02;
     });
 
-    updateShowFlashes(mode, time, delta);
+    updateShowFlashes(mode, time, delta, lightsActive);
     updateFireworks(mode, delta);
 
     if (!hallMap.particles.visible) return;
@@ -1768,10 +1835,10 @@ function clampNumber(value, min, max) {
     hallMap.particles.geometry.attributes.position.needsUpdate = true;
   }
 
-  function updateShowFlashes(mode, time, delta) {
+  function updateShowFlashes(mode, time, delta, lightsActive) {
     if (!hallMap.strobeLight) return;
 
-    if (!showPlaying || activeMap !== "hall") {
+    if (!lightsActive || !showPlaying || activeMap !== "hall") {
       hallMap.strobeLight.intensity = Math.max(0, hallMap.strobeLight.intensity - delta * 8);
       return;
     }
@@ -1792,12 +1859,11 @@ function clampNumber(value, min, max) {
     if (!fx) return;
 
     const canBurst = showPlaying && activeMap === "hall";
-    if (canBurst) {
-      fx.cooldown -= delta;
-      if (fx.cooldown <= 0) {
+    if (canBurst && pendingFireworkBursts > 0) {
+      const burstCount = pendingFireworkBursts;
+      pendingFireworkBursts = 0;
+      for (let i = 0; i < burstCount; i += 1) {
         spawnFireworkBurst(fx, mode);
-        const baseGap = Math.max(0.15, 1.0 - mode.fireworksRate * 0.82);
-        fx.cooldown = baseGap + Math.random() * 0.4;
       }
     }
 
@@ -1901,7 +1967,7 @@ function clampNumber(value, min, max) {
       hallMap.particles.visible = false;
     } else {
       animateHall(elapsed, delta);
-      hallMap.particles.visible = QUALITY_MODES[qualityMode].particles;
+      hallMap.particles.visible = QUALITY_MODES[qualityMode].particles && fxParticlesEnabled;
     }
     updateDoorVisuals();
     updateRemotePlayers(elapsed, delta);
@@ -2166,6 +2232,7 @@ function setHostRole(nextHostId) {
 
     updateShowStartButton();
     updateDoorUi();
+    updateFxButtons();
     updateHud();
     updateNetworkNoteStatus();
   }
@@ -2334,6 +2401,9 @@ function setupRealtime() {
       if (payload && Object.prototype.hasOwnProperty.call(payload, "doorOpen")) {
         applyDoorStateFromNetwork(payload.doorOpen);
       }
+      if (payload && payload.fxState) {
+        applyFxState(payload.fxState, { broadcast: false, fromNetwork: true });
+      }
       const joinedRoomId = payload && payload.roomId ? payload.roomId : networkRoomId;
       const hostAssigned = payload && payload.hostId ? (payload.hostId === selfSocketId ? "내가 호스트" : "호스트 배정됨") : "호스트 없음";
       appendChatLine("시스템", `룸 입장 완료: ${joinedRoomId} | ${hostAssigned}`, "system");
@@ -2349,6 +2419,9 @@ function setupRealtime() {
       }
       if (payload && Object.prototype.hasOwnProperty.call(payload, "doorOpen")) {
         applyDoorStateFromNetwork(payload.doorOpen);
+      }
+      if (payload && payload.fxState) {
+        applyFxState(payload.fxState, { broadcast: false, fromNetwork: true });
       }
     });
 
@@ -2392,6 +2465,15 @@ function setupRealtime() {
     socket.on("door:state", (payload) => {
       if (payload && Object.prototype.hasOwnProperty.call(payload, "open")) {
         applyDoorStateFromNetwork(payload.open);
+      }
+    });
+
+    socket.on("fx:state", (payload) => {
+      if (payload && payload.fxState) {
+        applyFxState(payload.fxState, { broadcast: false, fromNetwork: true });
+      }
+      if (payload && payload.burst) {
+        requestFireworkBurst({ broadcast: false, fromNetwork: true });
       }
     });
 

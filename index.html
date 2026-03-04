@@ -17,20 +17,6 @@
       <section class="panel panel-intro">
         <h1><span class="live-badge">실시간</span> NEXA 라이브 로비</h1>
         <p id="status-intent">로비에서 복도를 따라 이동해 공연장 입구로 진입하세요.</p>
-        <div id="intro-stats" class="stat-grid">
-          <div class="stat-card">
-            <span class="stat-label">수용 인원</span>
-            <strong id="stat-capacity">50</strong>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">좌석 배치</span>
-            <strong id="stat-layout">5 x 10</strong>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">활성 좌석</span>
-            <strong id="stat-seats">0</strong>
-          </div>
-        </div>
       </section>
 
       <section class="panel panel-controls">
@@ -45,18 +31,12 @@
 
         <div class="ops-stack">
           <div class="ops-row">
-            <span class="ops-label">공연 모드</span>
+            <span class="ops-label">&#44277;&#50672; &#50672;&#52636;</span>
             <div class="mode-grid">
-              <button type="button" data-show-mode="rehearsal">리허설</button>
-              <button type="button" data-show-mode="live">라이브</button>
-              <button type="button" data-show-mode="finale">피날레</button>
+              <button id="fx-particles-btn" type="button">&#54028;&#53944;&#53364; &#45148;&#44592;</button>
+              <button id="fx-lights-btn" type="button">&#48520; &#45148;&#44592;</button>
+              <button id="fx-fireworks-btn" type="button">&#47924;&#45824; &#54253;&#51453; &#53552;&#53944;&#47532;&#44592;</button>
             </div>
-          </div>
-
-          <div class="ops-row" id="occupancy-row">
-            <label class="ops-label" for="occupancy-range">관객 밀도</label>
-            <input id="occupancy-range" type="range" min="0" max="50" step="1" value="50" />
-            <p id="occupancy-label" class="ops-value">50 / 50</p>
           </div>
 
           <div class="ops-row">

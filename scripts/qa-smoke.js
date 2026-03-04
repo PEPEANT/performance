@@ -131,6 +131,23 @@ async function checkRealtimeFlow(checks) {
       }
     });
 
+    const promotePlayerFirst = await connectAndJoin('promote-player-first', false, 'qa-promote-room');
+    clients.push(promotePlayerFirst.socket);
+    const promoteHostSecond = await connectAndJoin('promote-host-second', true, 'qa-promote-room');
+    clients.push(promoteHostSecond.socket);
+
+    checks.push({
+      name: 'host_promoted_when_intent_joins_late',
+      ok:
+        Boolean(promoteHostSecond.joined.selfId) &&
+        promoteHostSecond.joined.hostId === promoteHostSecond.joined.selfId,
+      detail: {
+        firstJoinHostId: promotePlayerFirst.joined.hostId,
+        secondJoinHostId: promoteHostSecond.joined.hostId,
+        secondSelfId: promoteHostSecond.joined.selfId
+      }
+    });
+
     const doorBroadcast = onceWithTimeout(player.socket, 'door:state', 8000);
     host.socket.emit('door:set', { open: false, ts: Date.now() });
     const doorState = await doorBroadcast;
@@ -158,6 +175,37 @@ async function checkRealtimeFlow(checks) {
       detail: showState
     });
 
+    const fxStateRecv = onceWithTimeout(player.socket, 'fx:state', 8000);
+    host.socket.emit('fx:set', { particles: false, lights: false, ts: Date.now() });
+    const fxStatePayload = await fxStateRecv;
+    checks.push({
+      name: 'fx_state_broadcast',
+      ok:
+        fxStatePayload &&
+        fxStatePayload.fxState &&
+        fxStatePayload.fxState.particles === false &&
+        fxStatePayload.fxState.lights === false,
+      detail: fxStatePayload
+    });
+
+    const fxHostOnlyErrPromise = onceWithTimeout(player.socket, 'room:error', 8000);
+    player.socket.emit('fx:set', { particles: true, ts: Date.now() });
+    const fxHostOnlyErr = await fxHostOnlyErrPromise;
+    checks.push({
+      name: 'fx_host_only_guard',
+      ok: fxHostOnlyErr && fxHostOnlyErr.code === 'HOST_ONLY',
+      detail: fxHostOnlyErr
+    });
+
+    const fxBurstRecv = onceWithTimeout(player.socket, 'fx:state', 8000);
+    host.socket.emit('fx:set', { burst: true, ts: Date.now() });
+    const fxBurstPayload = await fxBurstRecv;
+    checks.push({
+      name: 'fx_burst_signal',
+      ok: fxBurstPayload && fxBurstPayload.burst === true,
+      detail: fxBurstPayload
+    });
+
     const chatRecv = onceWithTimeout(host.socket, 'chat:recv', 8000);
     player.socket.emit('chat:send', { text: 'qa-hello', ts: Date.now() });
     const chatPayload = await chatRecv;
@@ -170,7 +218,12 @@ async function checkRealtimeFlow(checks) {
     const snapshotPayload = await onceWithTimeout(player.socket, 'room:snapshot', 8000);
     checks.push({
       name: 'snapshot_room_state',
-      ok: snapshotPayload && snapshotPayload.roomId === ROOM_ID && snapshotPayload.doorOpen === false,
+      ok: snapshotPayload &&
+        snapshotPayload.roomId === ROOM_ID &&
+        snapshotPayload.doorOpen === false &&
+        snapshotPayload.fxState &&
+        snapshotPayload.fxState.particles === false &&
+        snapshotPayload.fxState.lights === false,
       detail: {
         roomId: snapshotPayload && snapshotPayload.roomId,
         doorOpen: snapshotPayload && snapshotPayload.doorOpen,
