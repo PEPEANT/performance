@@ -222,7 +222,7 @@
   let cameraTween = null;
   let transitionInFlight = false;
   let doorOpen = true;
-  let portalState = { phase: "cooldown", secondsLeft: 0, progress: 0 };
+  let portalState = { phase: "open", secondsLeft: 0, progress: 1 };
   let lastPortalUiSignature = "";
   let doorTarget = 1;
   let doorSlide = 1;
@@ -547,41 +547,8 @@
     };
   }
 
-  function computePortalState(nowMs = Date.now()) {
-    const cycle = PORTAL_FLOW.cooldownSeconds + PORTAL_FLOW.warningSeconds + PORTAL_FLOW.openSeconds;
-    if (cycle <= 0) {
-      return { phase: "open", secondsLeft: 0, progress: 1 };
-    }
-
-    let elapsed = ((nowMs - PORTAL_FLOW.epochMs) / 1000) % cycle;
-    if (elapsed < 0) elapsed += cycle;
-
-    if (elapsed < PORTAL_FLOW.cooldownSeconds) {
-      const remaining = PORTAL_FLOW.cooldownSeconds - elapsed;
-      return {
-        phase: "cooldown",
-        secondsLeft: Math.max(0, Math.ceil(remaining)),
-        progress: elapsed / PORTAL_FLOW.cooldownSeconds
-      };
-    }
-
-    elapsed -= PORTAL_FLOW.cooldownSeconds;
-    if (elapsed < PORTAL_FLOW.warningSeconds) {
-      const remaining = PORTAL_FLOW.warningSeconds - elapsed;
-      return {
-        phase: "warning",
-        secondsLeft: Math.max(0, Math.ceil(remaining)),
-        progress: elapsed / PORTAL_FLOW.warningSeconds
-      };
-    }
-
-    elapsed -= PORTAL_FLOW.warningSeconds;
-    const remaining = PORTAL_FLOW.openSeconds - elapsed;
-    return {
-      phase: "open",
-      secondsLeft: Math.max(0, Math.ceil(remaining)),
-      progress: elapsed / PORTAL_FLOW.openSeconds
-    };
+  function computePortalState(_nowMs = Date.now()) {
+    return { phase: "open", secondsLeft: 0, progress: 1 };
   }
 
   function getPortalPhaseSummary() {
