@@ -1,4 +1,4 @@
-# Keep legacy reference project out of this repo
+﻿# Keep legacy reference project out of this repo
 OX/
 
 # Local/editor noise
@@ -6,3 +6,6 @@ OX/
 Thumbs.db
 *.log
 .vscode/
+
+node_modules/
+

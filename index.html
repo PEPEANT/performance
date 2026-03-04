@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -6,7 +6,7 @@
     name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
   />
-  <title>NEXA LIVE LOBBY</title>
+  <title>NEXA 라이브 로비</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
   <link rel="stylesheet" href="./style.css" />
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -14,19 +14,20 @@
     defer
     src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"
   ></script>
+  <script defer src="/socket.io/socket.io.js"></script>
   <script defer src="./app.js"></script>
 </head>
 <body>
   <main id="app">
     <aside id="overlay">
       <section class="panel panel-intro">
-        <h1><span class="live-badge">LIVE</span> NEXA LIVE LOBBY</h1>
+        <h1><span class="live-badge">LIVE</span> NEXA 라이브 로비</h1>
         <p id="status-intent">
-          확장된 로비에서 복도 문을 지나 공연장으로 바로 이어집니다.
+          로비에서 복도를 지나 공연장으로 이동하세요.
         </p>
         <div class="stat-grid">
           <div class="stat-card">
-            <span class="stat-label">공연장 수용</span>
+            <span class="stat-label">수용 인원</span>
             <strong id="stat-capacity">50</strong>
           </div>
           <div class="stat-card">
@@ -44,10 +45,10 @@
         <h2>카메라 프리셋</h2>
         <div class="preset-grid">
           <button type="button" data-map-scope="lobby" data-preset="lobby_entry">로비 입구</button>
-          <button type="button" data-map-scope="lobby" data-preset="lobby_corridor">복도 시점</button>
-          <button type="button" data-map-scope="hall" data-preset="hall_wide">홀 전체</button>
-          <button type="button" data-map-scope="hall" data-preset="hall_stage">무대 클로즈</button>
-          <button type="button" data-map-scope="hall" data-preset="hall_audience">객석 중심</button>
+          <button type="button" data-map-scope="lobby" data-preset="lobby_corridor">로비 복도</button>
+          <button type="button" data-map-scope="hall" data-preset="hall_wide">공연장 전체</button>
+          <button type="button" data-map-scope="hall" data-preset="hall_stage">무대 근접</button>
+          <button type="button" data-map-scope="hall" data-preset="hall_audience">관객 시점</button>
         </div>
 
         <div class="ops-stack">
@@ -77,22 +78,89 @@
         </div>
 
         <button id="portal-action-btn" class="accent-btn" type="button">공연장 입장 (E)</button>
+        <button id="show-start-btn" class="accent-btn hidden" type="button">공연 시작</button>
         <button id="host-door-btn" class="ghost-btn" type="button">호스트 문 닫기</button>
+        <button id="fps-toggle-btn" class="ghost-btn" type="button">1인칭 모드 켜기 (F)</button>
         <button id="return-lobby-btn" class="ghost-btn hidden" type="button">로비로 돌아가기</button>
+
+        <div class="clip-panel">
+          <h3>안무 클립 (1~10)</h3>
+          <div id="clip-grid" class="clip-grid">
+            <button type="button" data-clip-id="1">1</button>
+            <button type="button" data-clip-id="2">2</button>
+            <button type="button" data-clip-id="3">3</button>
+            <button type="button" data-clip-id="4">4</button>
+            <button type="button" data-clip-id="5">5</button>
+            <button type="button" data-clip-id="6">6</button>
+            <button type="button" data-clip-id="7">7</button>
+            <button type="button" data-clip-id="8">8</button>
+            <button type="button" data-clip-id="9">9</button>
+            <button type="button" data-clip-id="10">10</button>
+          </div>
+
+          <div class="queue-grid">
+            <button id="queue-record-btn" type="button">큐 녹화 시작</button>
+            <button id="queue-play-btn" type="button">큐 재생</button>
+            <button id="queue-loop-btn" type="button">루프 켜짐</button>
+            <button id="queue-save-btn" type="button">큐 저장</button>
+            <button id="queue-load-btn" type="button">큐 불러오기</button>
+            <button id="queue-clear-btn" type="button">큐 초기화</button>
+          </div>
+          <p id="queue-status" class="ops-value">큐 대기 | 이벤트 0개 | 재생 정지</p>
+        </div>
       </section>
     </aside>
 
     <aside id="hud" aria-live="polite">
-      <div class="hud-chip"><span>MAP</span><strong id="hud-map">LOBBY</strong></div>
-      <div class="hud-chip"><span>FPS</span><strong id="hud-fps">0</strong></div>
-      <div class="hud-chip"><span>SEATS</span><strong id="hud-seats">0 / 50</strong></div>
-      <div class="hud-chip"><span>QUALITY</span><strong id="hud-quality">MEDIUM</strong></div>
-      <div class="hud-chip"><span>DOOR</span><strong id="hud-portal">OPEN</strong></div>
-      <div class="hud-chip"><span>DRAWS</span><strong id="hud-drawcalls">0</strong></div>
+      <div class="hud-chip"><span>맵</span><strong id="hud-map">로비</strong></div>
+      <div class="hud-chip"><span>프레임</span><strong id="hud-fps">0</strong></div>
+      <div class="hud-chip"><span>좌석</span><strong id="hud-seats">0 / 50</strong></div>
+      <div class="hud-chip"><span>품질</span><strong id="hud-quality">보통</strong></div>
+      <div class="hud-chip"><span>문</span><strong id="hud-portal">열림</strong></div>
+      <div class="hud-chip"><span>드로우콜</span><strong id="hud-drawcalls">0</strong></div>
     </aside>
 
+    <div id="hud-ui" aria-label="플레이 상태">
+      <div class="hud-row" id="hud-row-status">
+        <span class="hud-key">상태</span>
+        <span id="hud-status">오프라인</span>
+      </div>
+      <div class="hud-row" id="hud-row-players">
+        <span class="hud-key">현재 인원</span>
+        <span id="hud-players">1</span>
+      </div>
+      <div class="hud-row" id="hud-row-position">
+        <span class="hud-key">좌표</span>
+        <span id="hud-position">0, 0</span>
+      </div>
+      <div class="hud-row" id="hud-row-fps-mini">
+        <span class="hud-key">FPS</span>
+        <span id="hud-fps-mini">0</span>
+      </div>
+    </div>
+
+    <div id="chat-ui" class="collapsed" aria-label="채팅">
+      <div id="chat-header">
+        <span id="chat-title">현장 채팅</span>
+        <button id="chat-toggle" type="button" aria-expanded="false">열기</button>
+      </div>
+      <div id="chat-log" role="log" aria-live="polite" aria-relevant="additions text"></div>
+      <div id="chat-controls">
+        <input
+          id="chat-input"
+          type="text"
+          maxlength="140"
+          autocomplete="off"
+          placeholder="메시지 입력 후 Enter"
+        />
+        <button id="chat-send" type="button">전송</button>
+      </div>
+    </div>
+
     <div id="loading" aria-live="polite">로비 구성 중...</div>
-    <div id="canvas-root" aria-label="3D stage viewport"></div>
+    <div id="canvas-root" aria-label="3D 무대 뷰포트"></div>
   </main>
 </body>
 </html>
+
+
