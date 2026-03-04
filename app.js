@@ -390,14 +390,26 @@
     }, 420);
   }
 
-  function setDoorOpen(nextOpen) {
-    doorOpen = Boolean(nextOpen);
+  function setDoorOpen(nextOpen, options = {}) {
+    const { broadcast = socketConnected && isHostClient } = options;
+    const next = Boolean(nextOpen);
+    if (doorOpen === next) {
+      return;
+    }
+    doorOpen = next;
     doorTarget = doorOpen ? 1 : 0;
     if (dom.hostDoorBtn && isHostClient) {
       dom.hostDoorBtn.textContent = doorOpen ? "호스트 문 닫기" : "호스트 문 열기";
     }
+    if (broadcast && socketConnected && socket && isHostClient) {
+      socket.emit("door:set", { open: doorOpen, ts: Date.now() });
+    }
     updateDoorUi();
     updateHud();
+  }
+
+  function applyDoorStateFromNetwork(nextOpen) {
+    setDoorOpen(Boolean(nextOpen), { broadcast: false });
   }
 
   function updateDoorUi() {
@@ -1560,6 +1572,9 @@ function setupRealtime() {
       if (payload && payload.showState) {
         applyShowStateFromNetwork(payload.showState, true);
       }
+      if (payload && Object.prototype.hasOwnProperty.call(payload, "doorOpen")) {
+        applyDoorStateFromNetwork(payload.doorOpen);
+      }
       const joinedRoomId = payload && payload.roomId ? payload.roomId : networkRoomId;
       const hostAssigned = payload && payload.hostId ? (payload.hostId === selfSocketId ? "내가 호스트" : "호스트 배정됨") : "호스트 없음";
       appendChatLine("시스템", `룸 입장 완료: ${joinedRoomId} | ${hostAssigned}`, "system");
@@ -1572,6 +1587,9 @@ function setupRealtime() {
       applyRoomSnapshot(payload);
       if (payload && payload.showState) {
         applyShowStateFromNetwork(payload.showState, false);
+      }
+      if (payload && Object.prototype.hasOwnProperty.call(payload, "doorOpen")) {
+        applyDoorStateFromNetwork(payload.doorOpen);
       }
     });
 
@@ -1592,6 +1610,12 @@ function setupRealtime() {
 
     socket.on("show:state", (payload) => {
       applyShowStateFromNetwork(payload, true);
+    });
+
+    socket.on("door:state", (payload) => {
+      if (payload && Object.prototype.hasOwnProperty.call(payload, "open")) {
+        applyDoorStateFromNetwork(payload.open);
+      }
     });
 
     socket.on("chat:recv", (payload) => {

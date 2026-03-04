@@ -64,6 +64,16 @@ function sanitizeHostIntent(raw) {
   return text === "1" || text === "true" || text === "yes" || text === "host";
 }
 
+function sanitizeBooleanIntent(raw, fallback = false) {
+  if (raw === true) return true;
+  if (raw === false) return false;
+  const text = String(raw ?? "").trim().toLowerCase();
+  if (!text) return Boolean(fallback);
+  if (text === "1" || text === "true" || text === "yes" || text === "on") return true;
+  if (text === "0" || text === "false" || text === "no" || text === "off") return false;
+  return Boolean(fallback);
+}
+
 function clampNumber(value, min, max) {
   const n = Number(value);
   if (!Number.isFinite(n)) return min;
@@ -86,7 +96,8 @@ function makeRoomIfNeeded(roomId) {
       playing: false,
       startedAt: 0,
       by: null
-    }
+    },
+    doorOpen: true
   };
   rooms.set(roomId, room);
   return room;
@@ -112,6 +123,7 @@ function buildSnapshot(room) {
     roomId: room.roomId,
     hostId: room.hostId,
     showState: room.showState,
+    doorOpen: room.doorOpen,
     players: Array.from(room.players.values()).map((p) => serializePlayer(p)),
     serverNow: Date.now()
   };
@@ -216,9 +228,11 @@ function handleJoin(socket, payload) {
     selfId: socket.id,
     hostId: room.hostId,
     showState: room.showState,
+    doorOpen: room.doorOpen,
     players: Array.from(room.players.values()).map((p) => serializePlayer(p)),
     capacity: MAX_ROOM_SIZE,
     requestedRole: player.wantsHost ? "host" : "player",
+    doorOpen: room.doorOpen,
     serverNow: Date.now()
   });
 
@@ -294,6 +308,38 @@ function handleChatSend(socket, payload) {
   });
 }
 
+function handleDoorSet(socket, payload) {
+  const roomId = socketToRoom.get(socket.id);
+  if (!roomId) return;
+
+  const room = rooms.get(roomId);
+  const player = room?.players.get(socket.id);
+  if (!room || !player) return;
+
+  if (room.hostId !== socket.id) {
+    socket.emit("room:error", {
+      code: "HOST_ONLY",
+      message: "호스트만 문 상태를 변경할 수 있습니다.",
+      ts: Date.now()
+    });
+    return;
+  }
+
+  const nextOpen = sanitizeBooleanIntent(payload?.open, room.doorOpen);
+  if (room.doorOpen === nextOpen) {
+    return;
+  }
+
+  room.doorOpen = nextOpen;
+  io.to(room.key).emit("door:state", {
+    roomId: room.roomId,
+    hostId: room.hostId,
+    open: room.doorOpen,
+    by: socket.id,
+    ts: Date.now()
+  });
+  emitSnapshot(room);
+}
 function handleShowStart(socket) {
   const roomId = socketToRoom.get(socket.id);
   if (!roomId) return;
@@ -360,6 +406,7 @@ io.on("connection", (socket) => {
   socket.on("player:state", (payload) => handlePlayerState(socket, payload));
   socket.on("chat:send", (payload) => handleChatSend(socket, payload));
   socket.on("show:start", () => handleShowStart(socket));
+  socket.on("door:set", (payload) => handleDoorSet(socket, payload));
   socket.on("show:stop", () => handleShowStop(socket));
 
   socket.on("disconnect", () => {
@@ -378,6 +425,7 @@ server.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`performance server listening on :${PORT}`);
 });
+
 
 
 
