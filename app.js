@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const CAPACITY = 50;
   const ROWS = 5;
   const COLS = 10;
@@ -219,6 +219,7 @@
   let pendingShowStartFromHost = false;
   let lastNetworkShowPlaying = null;
   let lastNetworkShowStartedAtMs = 0;
+  let lastNetworkActiveClipId = 0;
   let clientDisplayName = requestedPlayerName || ("player-" + Math.floor(Math.random() * 9000 + 1000));
 
   dom.portalActionBtn.addEventListener("click", () => enterHall());
@@ -446,6 +447,10 @@
       startShow({ broadcast: false, allowNonHost: true, startOffsetSeconds: getNetworkShowOffsetSeconds() });
     }
 
+    if (activeMap === "hall") {
+      applyLatestNetworkClip();
+    }
+
     emitLocalPlayerState(true);
     updateHud();
   }
@@ -617,6 +622,7 @@ function applyQuality() {
     showPlaying = false;
     pendingShowStartFromHost = false;
     lastNetworkShowStartedAtMs = 0;
+    lastNetworkActiveClipId = 0;
     setScreenVideoEnabled(false);
 
     if (stageVideo) {
@@ -701,6 +707,8 @@ function applyQuality() {
     if (broadcast && socketConnected && isHostClient && socket) {
       socket.emit("show:start");
     }
+
+    applyLatestNetworkClip();
   }
 
   function syncShowMediaState() {
@@ -739,25 +747,66 @@ function applyQuality() {
     return Math.max(0, stageVideo.currentTime);
   }
 
+  function normalizeClipId(value) {
+    const clipId = Math.trunc(Number(value));
+    if (!Number.isFinite(clipId)) return 0;
+    if (clipId < 1 || clipId > CLIP_IDS.length) return 0;
+    return clipId;
+  }
+
+  function applyLatestNetworkClip(options = {}) {
+    const { force = false } = options;
+    if (!socketConnected || isHostClient) return;
+    if (!showPlaying || activeMap !== "hall") return;
+    const clipId = normalizeClipId(lastNetworkActiveClipId);
+    if (!clipId) return;
+
+    const alreadyVisible =
+      currentClipId === clipId &&
+      Boolean(hallMap.performerPlane && hallMap.performerPlane.visible);
+    if (!force && alreadyVisible) return;
+
+    playPerformerClip(clipId, {
+      record: false,
+      broadcast: false,
+      fromNetwork: true,
+      silent: true
+    });
+  }
+
   function playPerformerClip(clipId, options = {}) {
-    const { record = true } = options;
+    const {
+      record = true,
+      broadcast = socketConnected && isHostClient,
+      fromNetwork = false,
+      silent = false
+    } = options;
+
     if (activeMap !== "hall") {
-      updateQueueUi("\uACF5\uC5F0\uC7A5 \uC548\uC5D0\uC11C\uB9CC \uB3D9\uC791\uD569\uB2C8\uB2E4.");
-      return;
-    }
-    if (!canControlShowOps()) {
-      updateQueueUi("호스트 전용 기능입니다.");
-      return;
-    }
-    if (!Number.isInteger(clipId) || clipId < 1 || clipId > CLIP_IDS.length) {
-      return;
-    }
-    if (!chromaVideo || !chromaVideoReady) {
-      updateQueueUi("\uD074\uB9BD \uC601\uC0C1\uC744 \uC544\uC9C1 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      if (!silent) {
+        updateQueueUi("\uACF5\uC5F0\uC7A5 \uC548\uC5D0\uC11C\uB9CC \uB3D9\uC791\uD569\uB2C8\uB2E4.");
+      }
       return;
     }
 
-    const nextSrc = CLIP_VIDEO_PATHS[clipId];
+    if (!fromNetwork && !canControlShowOps()) {
+      updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
+      return;
+    }
+
+    const nextClipId = normalizeClipId(clipId);
+    if (!nextClipId) {
+      return;
+    }
+
+    if (!chromaVideo || !chromaVideoReady) {
+      if (!silent) {
+        updateQueueUi("\uD074\uB9BD \uC601\uC0C1\uC744 \uC544\uC9C1 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      }
+      return;
+    }
+
+    const nextSrc = CLIP_VIDEO_PATHS[nextClipId];
     const currentSrc = String(chromaVideo.getAttribute("src") || "");
     if (currentSrc !== nextSrc) {
       chromaVideo.pause();
@@ -783,15 +832,26 @@ function applyQuality() {
       hallMap.performerPlane.visible = true;
     }
 
-    currentClipId = clipId;
+    currentClipId = nextClipId;
+    if (fromNetwork) {
+      lastNetworkActiveClipId = nextClipId;
+    }
     updateClipButtons();
+
+    if (broadcast && socketConnected && isHostClient && socket && !fromNetwork) {
+      socket.emit("performer:clip", {
+        clipId: nextClipId,
+        songTime: Number(getSongTimeSeconds().toFixed(3)),
+        ts: Date.now()
+      });
+    }
 
     if (record && queueRecording) {
       if (!showPlaying || !stageVideo || stageVideo.ended) {
         startShow();
       }
       const eventTime = Number(getSongTimeSeconds().toFixed(3));
-      queueEvents.push({ t: eventTime, clip: clipId });
+      queueEvents.push({ t: eventTime, clip: nextClipId });
       queueEvents.sort((a, b) => a.t - b.t);
       updateQueueUi(`${queueEvents.length}\uAC1C \uD050 \uC800\uC7A5`);
     }
@@ -1526,14 +1586,30 @@ function removeRemotePlayerById(playerId) {
 function applyShowStateFromNetwork(showState, force) {
     const nextPlaying = Boolean(showState && showState.playing);
     const startedAt = Number((showState && showState.startedAt) || 0);
-    if (!force && lastNetworkShowPlaying === nextPlaying) {
+    const activeClipId = normalizeClipId(showState && showState.activeClip);
+    const showChanged = lastNetworkShowPlaying !== nextPlaying;
+    const clipChanged = activeClipId > 0 && activeClipId !== lastNetworkActiveClipId;
+
+    if (!force && !showChanged && !clipChanged) {
+      return;
+    }
+
+    if (startedAt > 0) {
+      lastNetworkShowStartedAtMs = startedAt;
+    }
+
+    if (!nextPlaying) {
+      lastNetworkActiveClipId = 0;
+    } else if (activeClipId > 0) {
+      lastNetworkActiveClipId = activeClipId;
+    }
+
+    if (!showChanged && !force && nextPlaying && clipChanged) {
+      applyLatestNetworkClip({ force: true });
       return;
     }
 
     lastNetworkShowPlaying = nextPlaying;
-    if (startedAt > 0) {
-      lastNetworkShowStartedAtMs = startedAt;
-    }
 
     if (nextPlaying) {
       showPlaying = true;
@@ -1542,14 +1618,15 @@ function applyShowStateFromNetwork(showState, force) {
         startShow({ broadcast: false, allowNonHost: true, startOffsetSeconds: offsetSec });
       } else {
         pendingShowStartFromHost = true;
-        updateQueueUi("호스트가 공연을 시작했습니다.");
+        updateQueueUi("\uD638\uC2A4\uD2B8\uAC00 \uACF5\uC5F0\uC744 \uC2DC\uC791\uD588\uC2B5\uB2C8\uB2E4.");
         updateShowStartButton();
       }
+      applyLatestNetworkClip({ force: true });
       return;
     }
 
     stopShowLocal({ broadcast: false });
-    updateQueueUi("호스트가 공연을 중지했습니다.");
+    updateQueueUi("\uD638\uC2A4\uD2B8\uAC00 \uACF5\uC5F0\uC744 \uC911\uC9C0\uD588\uC2B5\uB2C8\uB2E4.");
   }
 
 function setupRealtime() {
@@ -1632,7 +1709,25 @@ function setupRealtime() {
     });
 
     socket.on("show:state", (payload) => {
-      applyShowStateFromNetwork(payload, true);
+      applyShowStateFromNetwork(payload, false);
+    });
+
+    socket.on("performer:clip", (payload) => {
+      const clipId = normalizeClipId(payload && payload.clipId);
+      if (!clipId) return;
+
+      lastNetworkActiveClipId = clipId;
+      if (showPlaying && activeMap === "hall") {
+        playPerformerClip(clipId, {
+          record: false,
+          broadcast: false,
+          fromNetwork: true,
+          silent: true
+        });
+      } else {
+        currentClipId = clipId;
+        updateClipButtons();
+      }
     });
 
     socket.on("door:state", (payload) => {
@@ -2373,26 +2468,3 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     return seat;
   }
 })()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

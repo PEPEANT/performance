@@ -1,4 +1,4 @@
-﻿const path = require("path");
+const path = require("path");
 const http = require("http");
 const express = require("express");
 const { Server } = require("socket.io");
@@ -9,6 +9,8 @@ const CHAT_MAX_LENGTH = 140;
 const CHAT_MIN_INTERVAL_MS = 250;
 const PLAYER_STATE_MIN_INTERVAL_MS = 50;
 const SNAPSHOT_INTERVAL_MS = 100;
+const CLIP_ID_MIN = 1;
+const CLIP_ID_MAX = 10;
 
 const app = express();
 const rootDir = __dirname;
@@ -95,7 +97,8 @@ function makeRoomIfNeeded(roomId) {
     showState: {
       playing: false,
       startedAt: 0,
-      by: null
+      by: null,
+      activeClip: 0
     },
     doorOpen: true
   };
@@ -308,6 +311,42 @@ function handleChatSend(socket, payload) {
   });
 }
 
+function handlePerformerClip(socket, payload) {
+  const roomId = socketToRoom.get(socket.id);
+  if (!roomId) return;
+
+  const room = rooms.get(roomId);
+  const player = room?.players.get(socket.id);
+  if (!room || !player) return;
+
+  if (room.hostId !== socket.id) {
+    socket.emit("room:error", {
+      code: "HOST_ONLY",
+      message: "호스트만 클립을 제어할 수 있습니다.",
+      ts: Date.now()
+    });
+    return;
+  }
+
+  const clipId = Math.trunc(Number(payload?.clipId));
+  if (!Number.isFinite(clipId) || clipId < CLIP_ID_MIN || clipId > CLIP_ID_MAX) {
+    socket.emit("room:error", {
+      code: "INVALID_CLIP",
+      message: "유효하지 않은 클립 번호입니다.",
+      ts: Date.now()
+    });
+    return;
+  }
+
+  room.showState.activeClip = clipId;
+  socket.to(room.key).emit("performer:clip", {
+    roomId: room.roomId,
+    hostId: room.hostId,
+    clipId,
+    startedAt: Date.now(),
+    ts: Date.now()
+  });
+}
 function handleDoorSet(socket, payload) {
   const roomId = socketToRoom.get(socket.id);
   if (!roomId) return;
@@ -360,7 +399,8 @@ function handleShowStart(socket) {
   room.showState = {
     playing: true,
     startedAt: Date.now(),
-    by: socket.id
+    by: socket.id,
+    activeClip: 0
   };
 
   io.to(room.key).emit("show:state", {
@@ -390,7 +430,8 @@ function handleShowStop(socket) {
   room.showState = {
     playing: false,
     startedAt: 0,
-    by: socket.id
+    by: socket.id,
+    activeClip: 0
   };
 
   io.to(room.key).emit("show:state", {
@@ -408,6 +449,7 @@ io.on("connection", (socket) => {
   socket.on("show:start", () => handleShowStart(socket));
   socket.on("door:set", (payload) => handleDoorSet(socket, payload));
   socket.on("show:stop", () => handleShowStop(socket));
+  socket.on("performer:clip", (payload) => handlePerformerClip(socket, payload));
 
   socket.on("disconnect", () => {
     leaveCurrentRoom(socket);
@@ -425,10 +467,3 @@ server.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`performance server listening on :${PORT}`);
 });
-
-
-
-
-
-
-
