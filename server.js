@@ -58,6 +58,12 @@ function sanitizeMap(raw) {
   return raw === "hall" ? "hall" : "lobby";
 }
 
+function sanitizeHostIntent(raw) {
+  if (raw === true) return true;
+  const text = String(raw ?? "").trim().toLowerCase();
+  return text === "1" || text === "true" || text === "yes" || text === "host";
+}
+
 function clampNumber(value, min, max) {
   const n = Number(value);
   if (!Number.isFinite(n)) return min;
@@ -120,10 +126,18 @@ function assignHost(room, nextHostId) {
   io.to(room.key).emit("host:update", { roomId: room.roomId, hostId: room.hostId, ts: Date.now() });
 }
 
+function findHostCandidate(room) {
+  for (const player of room.players.values()) {
+    if (player && player.wantsHost) {
+      return player.id;
+    }
+  }
+  return null;
+}
+
 function ensureHost(room) {
   if (room.hostId && room.players.has(room.hostId)) return;
-  const firstPlayer = room.players.values().next();
-  assignHost(room, firstPlayer.done ? null : firstPlayer.value.id);
+  assignHost(room, findHostCandidate(room));
 }
 
 function leaveCurrentRoom(socket) {
@@ -178,6 +192,7 @@ function handleJoin(socket, payload) {
     room,
     name: sanitizeName(payload?.name),
     map: sanitizeMap(payload?.map),
+    wantsHost: sanitizeHostIntent(payload?.isHost),
     x: 0,
     y: 0,
     z: 0,
@@ -193,7 +208,7 @@ function handleJoin(socket, payload) {
   socket.join(room.key);
 
   if (!room.hostId || !room.players.has(room.hostId)) {
-    assignHost(room, socket.id);
+    assignHost(room, player.wantsHost ? socket.id : findHostCandidate(room));
   }
 
   socket.emit("room:joined", {
@@ -203,6 +218,7 @@ function handleJoin(socket, payload) {
     showState: room.showState,
     players: Array.from(room.players.values()).map((p) => serializePlayer(p)),
     capacity: MAX_ROOM_SIZE,
+    requestedRole: player.wantsHost ? "host" : "player",
     serverNow: Date.now()
   });
 
@@ -362,3 +378,9 @@ server.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`performance server listening on :${PORT}`);
 });
+
+
+
+
+
+

@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg-1: #071220;
   --bg-2: #05070d;
   --bg-3: #11172a;
@@ -268,6 +268,35 @@ p {
   padding: 7px 8px;
 }
 
+.network-panel {
+  margin-top: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 9px;
+  display: grid;
+  gap: 8px;
+}
+
+.network-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.network-input {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+  font-size: 0.77rem;
+  font-weight: 650;
+  padding: 7px 8px;
+}
+
+#network-apply-btn {
+  margin-top: 2px;
+}
 .clip-panel {
   margin-top: 10px;
   border-radius: 10px;
@@ -696,3 +725,4 @@ p {
     width: auto;
   }
 }
+

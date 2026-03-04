@@ -41,13 +41,13 @@
   };
   const query = new URLSearchParams(window.location.search);
   const fromEmptines = String(query.get("from") || "").trim().toLowerCase() === "emptines";
-  const hostMode = String(query.get("host") || "1").trim().toLowerCase() !== "0";
-  const networkRoomId = String(query.get("room") || "main")
+  let hostMode = String(query.get("host") || "1").trim().toLowerCase() !== "0";
+  let networkRoomId = String(query.get("room") || "main")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, "")
     .slice(0, 32) || "main";
-  const requestedPlayerName = String(query.get("name") || "").trim();
+  let requestedPlayerName = String(query.get("name") || "").trim();
 
   const dom = {
     canvasRoot: document.getElementById("canvas-root"),
@@ -73,6 +73,11 @@
     queueLoadBtn: document.getElementById("queue-load-btn"),
     queueClearBtn: document.getElementById("queue-clear-btn"),
     queueStatus: document.getElementById("queue-status"),
+    networkRoleSelect: document.getElementById("network-role-select"),
+    networkRoomInput: document.getElementById("network-room-input"),
+    networkNameInput: document.getElementById("network-name-input"),
+    networkApplyBtn: document.getElementById("network-apply-btn"),
+    networkNote: document.getElementById("network-note"),
     fpsToggleBtn: document.getElementById("fps-toggle-btn"),
     hudMap: document.getElementById("hud-map"),
     hudFps: document.getElementById("hud-fps"),
@@ -213,7 +218,7 @@
   let stateSendAccumulator = 0;
   let pendingShowStartFromHost = false;
   let lastNetworkShowPlaying = null;
-  const clientDisplayName = requestedPlayerName || ("player-" + Math.floor(Math.random() * 9000 + 1000));
+  let clientDisplayName = requestedPlayerName || ("player-" + Math.floor(Math.random() * 9000 + 1000));
 
   dom.portalActionBtn.addEventListener("click", () => enterHall());
   if (dom.showStartBtn) {
@@ -345,6 +350,7 @@
     dom.queueClearBtn.addEventListener("click", () => clearQueueEvents());
   }
 
+  setupNetworkProfileUi();
   setupShowMedia();
   setupPlayerSystem();
   setupFirstPersonControls();
@@ -538,7 +544,9 @@ function applyQuality() {
     bg.addEventListener("error", () => {
       stageVideoReady = false;
       updateShowStartButton();
-      updateQueueUi("\uBC30\uACBD \uC601\uC0C1\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      const bgSrc = SHOW_VIDEO_PATH;
+      updateQueueUi(`배경 영상 로드 실패: ${bgSrc}`);
+      appendChatLine("시스템", `배경 영상 로드 실패: ${bgSrc}`, "system");
     });
 
     const chroma = document.createElement("video");
@@ -569,7 +577,9 @@ function applyQuality() {
 
     chroma.addEventListener("error", () => {
       chromaVideoReady = false;
-      updateQueueUi("\uD37C\uD3EC\uBA38 \uD074\uB9BD\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      const failedClipPath = String(chroma.getAttribute("src") || CLIP_VIDEO_PATHS[DEFAULT_CLIP_ID]);
+      updateQueueUi(`퍼포머 클립 로드 실패: ${failedClipPath}`);
+      appendChatLine("시스템", `퍼포머 클립 로드 실패: ${failedClipPath}`, "system");
     });
 
     bg.load();
@@ -1480,7 +1490,7 @@ function setupRealtime() {
     socket.on("connect", () => {
       socketConnected = true;
       selfSocketId = socket.id;
-      appendChatLine("\uC2DC\uC2A4\uD15C", "\uC11C\uBC84\uC5D0 \uC5F0\uACB0\uB418\uC5C8\uC2B5\uB2C8\uB2E4.", "system");
+      appendChatLine("시스템", `서버 연결 완료 | 역할 ${hostMode ? "호스트" : "플레이어"} | 룸 ${networkRoomId}`, "system");
       socket.emit("room:join", {
         roomId: networkRoomId,
         name: clientDisplayName,
@@ -1509,7 +1519,9 @@ function setupRealtime() {
       if (payload && payload.showState) {
         applyShowStateFromNetwork(payload.showState, true);
       }
-      appendChatLine("\uC2DC\uC2A4\uD15C", "\uB8F8 \uC785\uC7A5 \uC644\uB8CC: " + (payload && payload.roomId ? payload.roomId : networkRoomId), "system");
+      const joinedRoomId = payload && payload.roomId ? payload.roomId : networkRoomId;
+      const hostAssigned = payload && payload.hostId ? (payload.hostId === selfSocketId ? "내가 호스트" : "호스트 배정됨") : "호스트 없음";
+      appendChatLine("시스템", `룸 입장 완료: ${joinedRoomId} | ${hostAssigned}`, "system");
     });
 
     socket.on("room:snapshot", (payload) => {
@@ -1661,9 +1673,48 @@ function visibleRemotePlayerCount() {
   }
 
   function getHudStatusText() {
-    const modeText = firstPersonEnabled ? (pointerLocked ? "1\uC778\uCE6D" : "1\uC778\uCE6D \uC900\uBE44") : "\uC2DC\uB124\uB9C8";
-    const mapText = activeMap === "hall" ? "\uACF5\uC5F0\uC7A5" : "\uB85C\uBE44";
-    return `${modeText} | ${mapText} | ${showPlaying ? "\uACF5\uC5F0 \uC911" : "\uB300\uAE30 \uC911"}`;
+    const roleText = isHostClient ? "호스트" : "플레이어";
+    const modeText = firstPersonEnabled ? (pointerLocked ? "1인칭" : "1인칭 준비") : "시네마";
+    const mapText = activeMap === "hall" ? "공연장" : "로비";
+    return `${roleText} | ${modeText} | ${mapText} | ${showPlaying ? "공연 중" : "대기 중"}`;
+  }
+
+function setupNetworkProfileUi() {
+    if (!dom.networkRoleSelect || !dom.networkRoomInput || !dom.networkNameInput || !dom.networkApplyBtn) {
+      return;
+    }
+
+    dom.networkRoleSelect.value = hostMode ? "host" : "player";
+    dom.networkRoomInput.value = networkRoomId;
+    dom.networkNameInput.value = requestedPlayerName;
+
+    if (dom.networkNote) {
+      dom.networkNote.textContent = `현재 설정: ${hostMode ? "호스트" : "플레이어"} | 룸 ${networkRoomId}`;
+    }
+
+    dom.networkApplyBtn.addEventListener("click", () => {
+      const nextHostMode = String(dom.networkRoleSelect.value || "host").trim().toLowerCase() !== "player";
+      const nextRoomId = String(dom.networkRoomInput.value || "main")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "")
+        .slice(0, 32) || "main";
+      const nextName = String(dom.networkNameInput.value || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 24);
+
+      const nextQuery = new URLSearchParams(window.location.search);
+      nextQuery.set("host", nextHostMode ? "1" : "0");
+      nextQuery.set("room", nextRoomId);
+      if (nextName) {
+        nextQuery.set("name", nextName);
+      } else {
+        nextQuery.delete("name");
+      }
+
+      window.location.search = nextQuery.toString();
+    });
   }
 
 function setupChatUi() {
@@ -2234,6 +2285,15 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     return seat;
   }
 })()
+
+
+
+
+
+
+
+
+
 
 
 
