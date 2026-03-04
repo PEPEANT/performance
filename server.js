@@ -74,28 +74,35 @@ const staticOptions = {
 };
 
 
-app.get(["/", "/index.html"], (_req, res) => {
-  res.sendFile(path.join(staticRoot, "index.html"));
+function sendUtf8File(res, filePath, contentType) {
+  res.setHeader("Content-Type", `${contentType}; charset=utf-8`);
+  res.sendFile(filePath);
+}
+
+app.get(["/", "/index.html", "/performance", "/performance/", "/performance/index.html"], (_req, res) => {
+  sendUtf8File(res, path.join(staticRoot, "index.html"), "text/html");
 });
 
-app.get("/app.js", (_req, res) => {
-  res.sendFile(path.join(staticRoot, "app.js"));
+app.get(["/app.js", "/performance/app.js"], (_req, res) => {
+  sendUtf8File(res, path.join(staticRoot, "app.js"), "application/javascript");
 });
 
-app.get("/style.css", (_req, res) => {
-  res.sendFile(path.join(staticRoot, "style.css"));
+app.get(["/style.css", "/performance/style.css"], (_req, res) => {
+  sendUtf8File(res, path.join(staticRoot, "style.css"), "text/css");
 });
 
-app.get("/asset-manifest.json", (_req, res) => {
-  res.sendFile(path.join(staticRoot, "asset-manifest.json"));
+app.get(["/asset-manifest.json", "/performance/asset-manifest.json"], (_req, res) => {
+  sendUtf8File(res, path.join(staticRoot, "asset-manifest.json"), "application/json");
 });
 
-app.get("/01.mp4", (_req, res) => {
+app.get(["/01.mp4", "/performance/01.mp4"], (_req, res) => {
   res.sendFile(path.join(staticRoot, "01.mp4"));
 });
 
 app.use("/assets", express.static(path.join(staticRoot, "assets"), staticOptions));
 app.use("/WEBM", express.static(path.join(staticRoot, "WEBM"), staticOptions));
+app.use("/performance/assets", express.static(path.join(staticRoot, "assets"), staticOptions));
+app.use("/performance/WEBM", express.static(path.join(staticRoot, "WEBM"), staticOptions));
 
 app.get(["/server.js", "/package.json", "/package-lock.json"], (_req, res) => {
   res.status(404).json({ code: "NOT_FOUND" });

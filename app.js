@@ -60,6 +60,8 @@
     .replace(/[^a-z0-9_-]/g, "")
     .slice(0, 32) || "main";
   let requestedPlayerName = String(query.get("name") || "").trim();
+  const externalReturnUrlRaw = String(query.get("returnUrl") || "").trim();
+  const returnPortalHint = String(query.get("returnPortal") || "").trim().toLowerCase();
 
   const dom = {
     canvasRoot: document.getElementById("canvas-root"),
@@ -150,6 +152,8 @@
     closedDoorBarrierZ: 22.2,
     closedDoorHalfGap: 1.75
   });
+  const LOBBY_PORTAL_ENTRY_RADIUS = 4.8;
+  const LOBBY_PORTAL_ENTRY_RADIUS_SQ = LOBBY_PORTAL_ENTRY_RADIUS * LOBBY_PORTAL_ENTRY_RADIUS;
 
   dom.statCapacity.textContent = String(CAPACITY);
   dom.statLayout.textContent = `${ROWS} x ${COLS}`;
@@ -185,6 +189,8 @@
 
   const lobbyMap = createLobbyMap(THREE, scene, isMobile);
   const hallMap = createHallMap(THREE, scene, ROWS, COLS, isMobile);
+  const hallSeatColliders = Array.isArray(hallMap.seatColliders) ? hallMap.seatColliders : [];
+  const lobbyPortalWorldPosition = new THREE.Vector3();
   const playerLayer = new THREE.Group();
   playerLayer.name = "player-layer";
   scene.add(playerLayer);
@@ -277,9 +283,21 @@
       setMap("lobby", false);
       return;
     }
-    if (fromEmptines) {
-      window.location.assign("/?zone=lobby&from=performance");
+
+    const lobbyReturnUrl = buildLobbyReturnUrl();
+    if (lobbyReturnUrl) {
+      window.location.assign(lobbyReturnUrl);
+      return;
     }
+
+    dom.loading.textContent = "\uBCF5\uADC0 URL\uC774 \uC124\uC815\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
+    dom.loading.classList.remove("hidden");
+    setTimeout(() => {
+      if (!transitionInFlight) {
+        dom.loading.classList.add("hidden");
+        dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
+      }
+    }, 1000);
   });
   if (dom.fpsToggleBtn) {
     dom.fpsToggleBtn.addEventListener("click", () => {
@@ -556,7 +574,11 @@
 
   function getPortalPhaseSummary() {
     if (!doorOpen) return "\uBB38 \uB2EB\uD798 - \uD638\uC2A4\uD2B8 \uB300\uAE30";
-    if (portalState.phase === "open") return "\uD3EC\uD0C8 \uAC1C\uBC29\uB428";
+    if (portalState.phase === "open") {
+      return isNearLobbyPortal()
+        ? "\uD3EC\uD0C8 \uAC1C\uBC29\uB428"
+        : "\uD3EC\uD0C8 \uAC1C\uBC29 \uB428 - \uC785\uAD6C \uC774\uB3D9";
+    }
     if (portalState.phase === "warning") return "\uAC1C\uBC29 \uC900\uBE44 " + portalState.secondsLeft + "\uCD08";
     return "\uD3EC\uD0C8 \uCDA9\uC804 " + portalState.secondsLeft + "\uCD08";
   }
@@ -571,6 +593,50 @@
     }
     dom.portalTransition.classList.toggle("active", Boolean(active));
     dom.portalTransition.setAttribute("aria-hidden", active ? "false" : "true");
+  }
+
+  function resolveExternalUrl(rawUrl) {
+    const text = String(rawUrl || "").trim();
+    if (!text) return "";
+    try {
+      const parsed = new URL(text, window.location.href);
+      const protocol = String(parsed.protocol || "").toLowerCase();
+      if (protocol !== "http:" && protocol !== "https:") return "";
+      return parsed.toString();
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function buildLobbyReturnUrl() {
+    const explicitReturnUrl = resolveExternalUrl(externalReturnUrlRaw);
+    if (explicitReturnUrl) {
+      return explicitReturnUrl;
+    }
+
+    if (!fromEmptines) {
+      return "";
+    }
+
+    try {
+      const fallback = new URL("/?zone=lobby&from=performance", window.location.href);
+      if (returnPortalHint && !fallback.searchParams.has("returnPortal")) {
+        fallback.searchParams.set("returnPortal", returnPortalHint);
+      }
+      return fallback.toString();
+    } catch (_error) {
+      return "/?zone=lobby&from=performance";
+    }
+  }
+
+  function isNearLobbyPortal(position = camera.position) {
+    if (!lobbyMap.portalGroup || typeof lobbyMap.portalGroup.getWorldPosition !== "function") {
+      return true;
+    }
+    lobbyMap.portalGroup.getWorldPosition(lobbyPortalWorldPosition);
+    const dx = position.x - lobbyPortalWorldPosition.x;
+    const dz = position.z - lobbyPortalWorldPosition.z;
+    return dx * dx + dz * dz <= LOBBY_PORTAL_ENTRY_RADIUS_SQ;
   }
 
   function updatePortalUiCopy(forceMapHint = false) {
@@ -588,10 +654,13 @@
     const summary = getPortalPhaseSummary();
 
     if (dom.statusIntent) {
+      const nearPortal = isNearLobbyPortal();
       if (!doorOpen) {
         dom.statusIntent.textContent = "\uBB38\uC774 \uB2EB\uD600 \uC788\uC2B5\uB2C8\uB2E4. \uD638\uC2A4\uD2B8\uAC00 \uBB38\uC744 \uC5F4\uBA74 \uD3EC\uD0C8 \uB300\uAE30 \uB2E8\uACC4\uAC00 \uC9C4\uD589\uB429\uB2C8\uB2E4.";
-      } else if (portalState.phase === "open") {
+      } else if (portalState.phase === "open" && nearPortal) {
         dom.statusIntent.textContent = "\uD3EC\uD0C8\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. E\uB97C \uB20C\uB7EC \uACF5\uC5F0\uC7A5\uC73C\uB85C \uC785\uC7A5\uD558\uC138\uC694.";
+      } else if (portalState.phase === "open") {
+        dom.statusIntent.textContent = "\uD3EC\uD0C8\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uBCF5\uB3C4 \uB05D \uD3EC\uD0C8 \uADFC\uCC98\uC5D0\uC11C E\uB97C \uB20C\uB7EC \uC785\uC7A5\uD558\uC138\uC694.";
       } else if (portalState.phase === "warning") {
         dom.statusIntent.textContent = "\uD3EC\uD0C8 \uAC1C\uBC29 \uC900\uBE44 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uC785\uC7A5 \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
       } else {
@@ -622,6 +691,18 @@
     if (activeMap !== "lobby" || transitionInFlight) return;
 
     refreshPortalState(false);
+
+    if (!isNearLobbyPortal()) {
+      dom.loading.textContent = "\uD3EC\uD0C8 \uADFC\uCC98\uC5D0\uC11C E\uB97C \uB20C\uB7EC \uC785\uC7A5\uD558\uC138\uC694.";
+      dom.loading.classList.remove("hidden");
+      setTimeout(() => {
+        if (!transitionInFlight) {
+          dom.loading.classList.add("hidden");
+          dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
+        }
+      }, 900);
+      return;
+    }
 
     if (!doorOpen) {
       dom.loading.textContent = "\uBB38\uC774 \uB2EB\uD600 \uC788\uC2B5\uB2C8\uB2E4. \uD638\uC2A4\uD2B8\uAC00 \uBB38\uC744 \uC5F4\uC5B4\uC57C \uC785\uC7A5\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
@@ -692,7 +773,8 @@
     if (!dom.portalActionBtn) return;
     const inLobby = activeMap === "lobby";
     const portalOpen = portalState.phase === "open";
-    const canEnter = inLobby && doorOpen && portalOpen;
+    const nearPortal = isNearLobbyPortal();
+    const canEnter = inLobby && doorOpen && portalOpen && nearPortal;
     dom.portalActionBtn.disabled = !canEnter;
 
     if (!inLobby) {
@@ -709,6 +791,11 @@
       dom.portalActionBtn.textContent = portalState.phase === "warning"
         ? "\uAC1C\uBC29 \uC900\uBE44 " + portalState.secondsLeft + "\uCD08"
         : "\uD3EC\uD0C8 \uCDA9\uC804 " + portalState.secondsLeft + "\uCD08";
+      return;
+    }
+
+    if (!nearPortal) {
+      dom.portalActionBtn.textContent = "\uD3EC\uD0C8 \uADFC\uCC98\uB85C \uC774\uB3D9";
       return;
     }
 
@@ -788,7 +875,8 @@
     updatePortalUiCopy(true);
     dom.portalActionBtn.classList.toggle("hidden", activeMap !== "lobby");
     updateDoorUi();
-    const showReturn = activeMap === "hall" || fromEmptines;
+    const hasExternalReturn = Boolean(buildLobbyReturnUrl());
+    const showReturn = activeMap === "hall" || hasExternalReturn;
     dom.returnLobbyBtn.classList.toggle("hidden", !showReturn);
     dom.returnLobbyBtn.textContent = activeMap === "hall" ? "\uB85C\uBE44\uB85C \uB3CC\uC544\uAC00\uAE30" : "EMPTINES\uB85C \uBCF5\uADC0";
     const hallOnly = activeMap === "hall";
@@ -1489,38 +1577,64 @@ function clampNumber(value, min, max) {
       nextPos.z <= stageMaxZ;
 
     const canEnterStage = playerFootY >= HALL_STAGE_BOUNDS.height - 1.0;
-    if (!insideStageWall || canEnterStage) {
-      return;
+    if (insideStageWall && !canEnterStage) {
+      if (prevPos.z <= stageMinZ) {
+        nextPos.z = stageMinZ;
+      } else if (prevPos.z >= stageMaxZ) {
+        nextPos.z = stageMaxZ;
+      } else if (prevPos.x <= stageMinX) {
+        nextPos.x = stageMinX;
+      } else if (prevPos.x >= stageMaxX) {
+        nextPos.x = stageMaxX;
+      } else {
+        const distances = [
+          Math.abs(nextPos.z - stageMinZ),
+          Math.abs(stageMaxZ - nextPos.z),
+          Math.abs(nextPos.x - stageMinX),
+          Math.abs(stageMaxX - nextPos.x)
+        ];
+        const minDistance = Math.min(...distances);
+        if (minDistance === distances[0]) nextPos.z = stageMinZ;
+        else if (minDistance === distances[1]) nextPos.z = stageMaxZ;
+        else if (minDistance === distances[2]) nextPos.x = stageMinX;
+        else nextPos.x = stageMaxX;
+      }
     }
 
-    if (prevPos.z <= stageMinZ) {
-      nextPos.z = stageMinZ;
-      return;
-    }
-    if (prevPos.z >= stageMaxZ) {
-      nextPos.z = stageMaxZ;
-      return;
-    }
-    if (prevPos.x <= stageMinX) {
-      nextPos.x = stageMinX;
-      return;
-    }
-    if (prevPos.x >= stageMaxX) {
-      nextPos.x = stageMaxX;
-      return;
-    }
+    resolveHallSeatCollisions(nextPos, prevPos);
+  }
 
-    const distances = [
-      Math.abs(nextPos.z - stageMinZ),
-      Math.abs(stageMaxZ - nextPos.z),
-      Math.abs(nextPos.x - stageMinX),
-      Math.abs(stageMaxX - nextPos.x)
-    ];
-    const minDistance = Math.min(...distances);
-    if (minDistance === distances[0]) nextPos.z = stageMinZ;
-    else if (minDistance === distances[1]) nextPos.z = stageMaxZ;
-    else if (minDistance === distances[2]) nextPos.x = stageMinX;
-    else nextPos.x = stageMaxX;
+  function resolveHallSeatCollisions(nextPos, prevPos) {
+    if (!hallSeatColliders.length) return;
+
+    for (let i = 0; i < hallSeatColliders.length; i += 1) {
+      const seat = hallSeatColliders[i];
+      const minDist = PLAYER_COLLISION_RADIUS + seat.radius;
+      const minDistSq = minDist * minDist;
+      const dx = nextPos.x - seat.x;
+      const dz = nextPos.z - seat.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq >= minDistSq) continue;
+
+      let pushX = dx;
+      let pushZ = dz;
+
+      if (Math.abs(pushX) < 1e-5 && Math.abs(pushZ) < 1e-5) {
+        const prevX = Number.isFinite(prevPos?.x) ? prevPos.x : seat.x + 1;
+        const prevZ = Number.isFinite(prevPos?.z) ? prevPos.z : seat.z;
+        pushX = nextPos.x - prevX;
+        pushZ = nextPos.z - prevZ;
+      }
+
+      if (Math.abs(pushX) < 1e-5 && Math.abs(pushZ) < 1e-5) {
+        pushX = 1;
+        pushZ = 0;
+      }
+
+      const len = Math.hypot(pushX, pushZ) || 1;
+      nextPos.x = seat.x + (pushX / len) * minDist;
+      nextPos.z = seat.z + (pushZ / len) * minDist;
+    }
   }
 
   function getGroundHeightAt(x, z, mapName) {
@@ -2776,6 +2890,8 @@ function createLobbyMap(THREERef, targetScene, mobile) {
 
     const seatTemplate = buildSeatTemplate(THREERef);
     const facingTarget = new THREERef.Vector3(0, 1.1, -58);
+    const seatColliders = [];
+    const seatWorldPosition = new THREERef.Vector3();
 
     for (let row = 0; row < rows; row += 1) {
       for (let col = 0; col < cols; col += 1) {
@@ -2788,6 +2904,13 @@ function createLobbyMap(THREERef, targetScene, mobile) {
         seat.position.set(x, 0, z);
         seat.lookAt(facingTarget);
         seatingGroup.add(seat);
+        seat.updateMatrixWorld(true);
+        seat.getWorldPosition(seatWorldPosition);
+        seatColliders.push({
+          x: Math.round(seatWorldPosition.x * 1000) / 1000,
+          z: Math.round(seatWorldPosition.z * 1000) / 1000,
+          radius: 0.56
+        });
       }
     }
 
@@ -2857,7 +2980,7 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     group.add(particles);
 
     targetScene.add(group);
-    return { group, seatingGroup, stageWash, movingLights, particles, particleCount, particleVelocities, fireworks, strobeLight, screenMat, edgeMat, performerMat, performerPlane };
+    return { group, seatingGroup, seatColliders, stageWash, movingLights, particles, particleCount, particleVelocities, fireworks, strobeLight, screenMat, edgeMat, performerMat, performerPlane };
   }
 
   function createFireworkSystem(THREERef, mobile) {
