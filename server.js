@@ -292,11 +292,28 @@ function leaveCurrentRoom(socket) {
 }
 
 function handleJoin(socket, payload) {
+  const nextRoomId = sanitizeRoomId(payload?.roomId);
+  const prevRoomId = socketToRoom.get(socket.id);
+  const switchingRooms = Boolean(prevRoomId && prevRoomId !== nextRoomId);
+  const targetRoom = makeRoomIfNeeded(nextRoomId);
+
+  // If moving to another room fails due capacity, keep the current room/session.
+  if (switchingRooms && targetRoom.players.size >= MAX_ROOM_SIZE) {
+    socket.emit("room:error", {
+      code: "ROOM_FULL",
+      message: "방 정원이 가득 찼습니다.",
+      limit: MAX_ROOM_SIZE,
+      roomId: nextRoomId
+    });
+    return;
+  }
+
   leaveCurrentRoom(socket);
 
-  const roomId = sanitizeRoomId(payload?.roomId);
+  const roomId = nextRoomId;
   const room = makeRoomIfNeeded(roomId);
 
+  // Re-check after leave in case of race conditions.
   if (room.players.size >= MAX_ROOM_SIZE) {
     socket.emit("room:error", {
       code: "ROOM_FULL",
