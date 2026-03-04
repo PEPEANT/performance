@@ -14,17 +14,93 @@ const CLIP_ID_MAX = 10;
 
 const app = express();
 const rootDir = __dirname;
+const staticRoot = rootDir;
 
-app.use(
-  express.static(rootDir, {
-    setHeaders(res, filePath) {
-      const ext = path.extname(filePath).toLowerCase();
-      if (ext === ".mp4" || ext === ".webm") {
-        res.setHeader("Cache-Control", "public, max-age=604800, immutable");
-      }
-    }
-  })
+const allowedOrigins = Array.from(
+  new Set(
+    [
+      ...String(process.env.ALLOWED_ORIGINS || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+      String(process.env.PUBLIC_ORIGIN || "").trim(),
+      String(process.env.RENDER_EXTERNAL_URL || "").trim()
+    ].filter(Boolean)
+  )
 );
+
+const allowAllOriginsInDev = process.env.NODE_ENV !== "production" && allowedOrigins.length === 0;
+const enforceOriginInProduction = process.env.NODE_ENV === "production";
+
+function isSameHostOrigin(origin, hostHeader) {
+  if (!origin || !hostHeader) return false;
+  try {
+    const parsed = new URL(origin);
+    return parsed.host === hostHeader;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function isAllowedSocketOrigin(origin, hostHeader) {
+  if (!origin) {
+    return !enforceOriginInProduction;
+  }
+
+  if (allowAllOriginsInDev) {
+    return true;
+  }
+
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  return isSameHostOrigin(origin, hostHeader);
+}
+
+const staticOptions = {
+  dotfiles: "deny",
+  index: false,
+  setHeaders(res, filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === ".mp4" || ext === ".webm") {
+      res.setHeader("Cache-Control", "public, max-age=604800, immutable");
+      return;
+    }
+    if (ext === ".js" || ext === ".css") {
+      res.setHeader("Cache-Control", "public, max-age=300");
+    }
+  }
+};
+
+
+app.get(["/", "/index.html"], (_req, res) => {
+  res.sendFile(path.join(staticRoot, "index.html"));
+});
+
+app.get("/app.js", (_req, res) => {
+  res.sendFile(path.join(staticRoot, "app.js"));
+});
+
+app.get("/style.css", (_req, res) => {
+  res.sendFile(path.join(staticRoot, "style.css"));
+});
+
+app.get("/asset-manifest.json", (_req, res) => {
+  res.sendFile(path.join(staticRoot, "asset-manifest.json"));
+});
+
+app.get("/01.mp4", (_req, res) => {
+  res.sendFile(path.join(staticRoot, "01.mp4"));
+});
+
+app.use("/assets", express.static(path.join(staticRoot, "assets"), staticOptions));
+app.use("/WEBM", express.static(path.join(staticRoot, "WEBM"), staticOptions));
+
+app.get(["/server.js", "/package.json", "/package-lock.json"], (_req, res) => {
+  res.status(404).json({ code: "NOT_FOUND" });
+});
+
 
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true, ts: Date.now() });
@@ -36,6 +112,15 @@ const io = new Server(server, {
   cors: {
     origin: true,
     credentials: true
+  },
+  allowRequest(req, callback) {
+    const origin = String(req.headers.origin || "").trim();
+    const hostHeader = String(req.headers.host || "").trim();
+    if (isAllowedSocketOrigin(origin, hostHeader)) {
+      callback(null, true);
+      return;
+    }
+    callback("CORS_ORIGIN_DENIED", false);
   }
 });
 
@@ -150,9 +235,18 @@ function findHostCandidate(room) {
   return null;
 }
 
+function findFirstPlayerId(room) {
+  for (const player of room.players.values()) {
+    if (player) {
+      return player.id;
+    }
+  }
+  return null;
+}
+
 function ensureHost(room) {
   if (room.hostId && room.players.has(room.hostId)) return;
-  assignHost(room, findHostCandidate(room));
+  assignHost(room, findHostCandidate(room) || findFirstPlayerId(room));
 }
 
 function leaveCurrentRoom(socket) {
@@ -223,7 +317,7 @@ function handleJoin(socket, payload) {
   socket.join(room.key);
 
   if (!room.hostId || !room.players.has(room.hostId)) {
-    assignHost(room, player.wantsHost ? socket.id : findHostCandidate(room));
+    ensureHost(room);
   }
 
   socket.emit("room:joined", {
