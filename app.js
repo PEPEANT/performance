@@ -717,6 +717,7 @@
 
     setTimeout(() => {
       setMap("hall", true);
+      snapToHallEntryView();
       setPortalTransition(false);
       setTimeout(() => {
         dom.loading.classList.add("hidden");
@@ -779,6 +780,26 @@
     }
 
     dom.portalActionBtn.textContent = "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 (E)";
+  }
+
+  function snapToHallEntryView() {
+    if (activeMap !== "hall") return;
+
+    const eyeY = firstPersonEnabled ? PLAYER_EYE_HEIGHT.hall : 4.8;
+    const targetY = firstPersonEnabled ? PLAYER_EYE_HEIGHT.hall : 3.4;
+
+    camera.position.set(0, eyeY, 43.2);
+    controls.target.set(0, targetY, 68.0);
+    controls.update();
+
+    syncYawPitchFromCamera();
+    if (firstPersonEnabled) {
+      syncPlayerHeightToGround({ resetVelocity: true });
+      syncOrbitTargetToCamera();
+    }
+
+    emitLocalPlayerState(true);
+    updateHud();
   }
 
   function setMap(nextMap, immediate) {
