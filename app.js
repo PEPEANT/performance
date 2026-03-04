@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const CAPACITY = 50;
   const ROWS = 5;
   const COLS = 10;
@@ -39,29 +39,46 @@
       hint: "\uBB34\uB300 \uC5F0\uCD9C\uACFC \uAC1D\uC11D \uC0C1\uD0DC\uB97C \uD655\uC778\uD558\uC138\uC694."
     }
   };
+  const PORTAL_FLOW = Object.freeze({
+    cooldownSeconds: 22,
+    warningSeconds: 7,
+    openSeconds: 14,
+    epochMs: Date.UTC(2026, 0, 1, 0, 0, 0)
+  });
+
   const query = new URLSearchParams(window.location.search);
   const fromEmptines = String(query.get("from") || "").trim().toLowerCase() === "emptines";
-  const hostMode = String(query.get("host") || "1").trim().toLowerCase() !== "0";
-  const networkRoomId = String(query.get("room") || "main")
+  const adminUiMode = ["1", "true", "yes", "on"].includes(String(query.get("admin") || "").trim().toLowerCase());
+  const chatEnabled = adminUiMode;
+  const hostParamRaw = String(query.get("host") || "").trim().toLowerCase();
+  const explicitHostTrue = ["1", "true", "yes", "on", "host"].includes(hostParamRaw);
+  const explicitHostFalse = ["0", "false", "no", "off", "player"].includes(hostParamRaw);
+  let hostMode = explicitHostTrue ? true : explicitHostFalse ? false : adminUiMode;
+  let networkRoomId = String(query.get("room") || "main")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, "")
     .slice(0, 32) || "main";
-  const requestedPlayerName = String(query.get("name") || "").trim();
+  let requestedPlayerName = String(query.get("name") || "").trim();
+  const externalReturnUrlRaw = String(query.get("returnUrl") || "").trim();
+  const returnPortalHint = String(query.get("returnPortal") || "").trim().toLowerCase();
 
   const dom = {
     canvasRoot: document.getElementById("canvas-root"),
     loading: document.getElementById("loading"),
     statusIntent: document.getElementById("status-intent"),
+    introStats: document.getElementById("intro-stats"),
     statCapacity: document.getElementById("stat-capacity"),
+    statCapacityCard: document.getElementById("stat-capacity") ? document.getElementById("stat-capacity").closest(".stat-card") : null,
     statLayout: document.getElementById("stat-layout"),
     statSeats: document.getElementById("stat-seats"),
     presetButtons: Array.from(document.querySelectorAll("[data-preset]")),
-    modeButtons: Array.from(document.querySelectorAll("[data-show-mode]")),
-    occupancyRange: document.getElementById("occupancy-range"),
-    occupancyLabel: document.getElementById("occupancy-label"),
+    fxParticlesBtn: document.getElementById("fx-particles-btn"),
+    fxLightsBtn: document.getElementById("fx-lights-btn"),
+    fxFireworksBtn: document.getElementById("fx-fireworks-btn"),
     qualitySelect: document.getElementById("quality-select"),
     portalActionBtn: document.getElementById("portal-action-btn"),
+    portalPhaseNote: document.getElementById("portal-phase-note"),
     showStartBtn: document.getElementById("show-start-btn"),
     hostDoorBtn: document.getElementById("host-door-btn"),
     returnLobbyBtn: document.getElementById("return-lobby-btn"),
@@ -73,14 +90,22 @@
     queueLoadBtn: document.getElementById("queue-load-btn"),
     queueClearBtn: document.getElementById("queue-clear-btn"),
     queueStatus: document.getElementById("queue-status"),
+    networkPanel: document.getElementById("network-panel"),
+    networkRoleSelect: document.getElementById("network-role-select"),
+    networkRoomInput: document.getElementById("network-room-input"),
+    networkNameInput: document.getElementById("network-name-input"),
+    networkApplyBtn: document.getElementById("network-apply-btn"),
+    networkNote: document.getElementById("network-note"),
     fpsToggleBtn: document.getElementById("fps-toggle-btn"),
     hudMap: document.getElementById("hud-map"),
     hudFps: document.getElementById("hud-fps"),
+    hudSeatsChip: document.getElementById("hud-chip-seats"),
     hudSeats: document.getElementById("hud-seats"),
     hudQuality: document.getElementById("hud-quality"),
     hudPortal: document.getElementById("hud-portal"),
     hudDrawcalls: document.getElementById("hud-drawcalls"),
     hudStatus: document.getElementById("hud-status"),
+    hudPlayersRow: document.getElementById("hud-row-players"),
     hudPlayers: document.getElementById("hud-players"),
     hudPosition: document.getElementById("hud-position"),
     hudFpsMini: document.getElementById("hud-fps-mini"),
@@ -88,7 +113,10 @@
     chatLog: document.getElementById("chat-log"),
     chatInput: document.getElementById("chat-input"),
     chatSend: document.getElementById("chat-send"),
-    chatToggle: document.getElementById("chat-toggle")
+    chatToggle: document.getElementById("chat-toggle"),
+    portalTransition: document.getElementById("portal-transition"),
+    portalTransitionLabel: document.getElementById("portal-transition-label"),
+    portalTransitionTitle: document.getElementById("portal-transition-title")
   };
 
   if (!dom.canvasRoot || !dom.loading || !window.THREE || !window.THREE.OrbitControls) {
@@ -111,9 +139,28 @@
   const REMOTE_BADGE_DISTANCE_SQ = 45 * 45;
   const PLAYER_STATE_SEND_INTERVAL = 1 / 15;
   const REMOTE_INTERPOLATION_SPEED = 8;
+  const PLAYER_GRAVITY = 24;
+  const PLAYER_JUMP_SPEED = 9.2;
+  const PLAYER_COLLISION_RADIUS = 0.42;
+  const HALL_STAGE_BOUNDS = Object.freeze({ minX: -26, maxX: 26, minZ: 84, maxZ: 108, height: 2.4 });
+  const LOBBY_BOUNDS = Object.freeze({
+    minZ: 3.2,
+    maxZ: 45.2,
+    corridorStartZ: 23,
+    lobbyHalfWidth: 13.2,
+    corridorHalfWidth: 3.55,
+    closedDoorBarrierZ: 22.2,
+    closedDoorHalfGap: 1.75
+  });
+  const LOBBY_PORTAL_ENTRY_RADIUS = 4.8;
+  const LOBBY_PORTAL_ENTRY_RADIUS_SQ = LOBBY_PORTAL_ENTRY_RADIUS * LOBBY_PORTAL_ENTRY_RADIUS;
 
-  dom.statCapacity.textContent = String(CAPACITY);
-  dom.statLayout.textContent = `${ROWS} x ${COLS}`;
+  if (dom.statCapacity) {
+    dom.statCapacity.textContent = String(CAPACITY);
+  }
+  if (dom.statLayout) {
+    dom.statLayout.textContent = `${ROWS} x ${COLS}`;
+  }
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x050914);
@@ -146,6 +193,8 @@
 
   const lobbyMap = createLobbyMap(THREE, scene, isMobile);
   const hallMap = createHallMap(THREE, scene, ROWS, COLS, isMobile);
+  const hallSeatColliders = Array.isArray(hallMap.seatColliders) ? hallMap.seatColliders : [];
+  const lobbyPortalWorldPosition = new THREE.Vector3();
   const playerLayer = new THREE.Group();
   playerLayer.name = "player-layer";
   scene.add(playerLayer);
@@ -161,11 +210,16 @@
   let activeMap = "lobby";
   let activePreset = "lobby_entry";
   let activeAudience = CAPACITY;
-  let showMode = "live";
+  const showMode = "live";
+  let fxParticlesEnabled = true;
+  let fxLightsEnabled = true;
+  let pendingFireworkBursts = 0;
   let qualityMode = isMobile ? "low" : "medium";
   let cameraTween = null;
   let transitionInFlight = false;
   let doorOpen = true;
+  let portalState = { phase: "cooldown", secondsLeft: 0, progress: 0 };
+  let lastPortalUiSignature = "";
   let doorTarget = 1;
   let doorSlide = 1;
   let loadingHidden = false;
@@ -200,7 +254,8 @@
     backward: false,
     left: false,
     right: false,
-    run: false
+    run: false,
+    jump: false
   };
   const remotePlayers = new Map();
   const cameraDirectionTemp = new THREE.Vector3();
@@ -210,10 +265,15 @@
   let roomHostId = null;
   let isHostClient = hostMode;
   let roomPopulation = 1;
+  let playerFootY = 0;
+  let playerVelocityY = 0;
+  let playerGrounded = true;
   let stateSendAccumulator = 0;
   let pendingShowStartFromHost = false;
   let lastNetworkShowPlaying = null;
-  const clientDisplayName = requestedPlayerName || ("player-" + Math.floor(Math.random() * 9000 + 1000));
+  let lastNetworkShowStartedAtMs = 0;
+  let lastNetworkActiveClipId = 0;
+  let clientDisplayName = requestedPlayerName || ("\uD50C\uB808\uC774\uC5B4-" + Math.floor(Math.random() * 9000 + 1000));
 
   dom.portalActionBtn.addEventListener("click", () => enterHall());
   if (dom.showStartBtn) {
@@ -230,9 +290,21 @@
       setMap("lobby", false);
       return;
     }
-    if (fromEmptines) {
-      window.location.assign("/?zone=lobby&from=performance");
+
+    const lobbyReturnUrl = buildLobbyReturnUrl();
+    if (lobbyReturnUrl) {
+      window.location.assign(lobbyReturnUrl);
+      return;
     }
+
+    dom.loading.textContent = "\uBCF5\uADC0 URL\uC774 \uC124\uC815\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
+    dom.loading.classList.remove("hidden");
+    setTimeout(() => {
+      if (!transitionInFlight) {
+        dom.loading.classList.add("hidden");
+        dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
+      }
+    }, 1000);
   });
   if (dom.fpsToggleBtn) {
     dom.fpsToggleBtn.addEventListener("click", () => {
@@ -242,7 +314,8 @@
 
   window.addEventListener("keydown", (event) => {
     const key = String(event.key || "").toLowerCase();
-    setMovementKeyState(key, true);
+    const code = String(event.code || "").toLowerCase();
+    setMovementKeyState(key, code, true);
 
     const tag = String(event.target?.tagName || "").toLowerCase();
     const typing = tag === "input" || tag === "select" || tag === "textarea";
@@ -255,6 +328,10 @@
     }
 
     if (event.repeat) return;
+
+    if (key === " " || key === "space" || key === "spacebar" || code === "space") {
+      event.preventDefault();
+    }
 
     if (key === "e") enterHall();
     if (isHostClient && key === "h") {
@@ -269,7 +346,8 @@
 
   window.addEventListener("keyup", (event) => {
     const key = String(event.key || "").toLowerCase();
-    setMovementKeyState(key, false);
+    const code = String(event.code || "").toLowerCase();
+    setMovementKeyState(key, code, false);
   });
 
   window.addEventListener("pointerdown", (event) => {
@@ -298,18 +376,26 @@
     button.addEventListener("click", () => applyPreset(button.dataset.preset, false));
   });
 
-  dom.modeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      showMode = SHOW_MODES[button.dataset.showMode] ? button.dataset.showMode : "live";
-      dom.modeButtons.forEach((b) => b.classList.toggle("active", b === button));
+  if (dom.fxParticlesBtn) {
+    dom.fxParticlesBtn.addEventListener("click", () => {
+      if (!canControlShowOps() || activeMap !== "hall") return;
+      applyFxState({ particles: !fxParticlesEnabled });
     });
-  });
+  }
 
-  dom.occupancyRange.addEventListener("input", () => {
-    activeAudience = Math.max(0, Math.min(CAPACITY, Number(dom.occupancyRange.value) || 0));
-    dom.occupancyLabel.textContent = `${activeAudience} / ${CAPACITY}`;
-    dom.statSeats.textContent = String(activeAudience);
-  });
+  if (dom.fxLightsBtn) {
+    dom.fxLightsBtn.addEventListener("click", () => {
+      if (!canControlShowOps() || activeMap !== "hall") return;
+      applyFxState({ lights: !fxLightsEnabled });
+    });
+  }
+
+  if (dom.fxFireworksBtn) {
+    dom.fxFireworksBtn.addEventListener("click", () => {
+      if (!canControlShowOps() || activeMap !== "hall") return;
+      requestFireworkBurst();
+    });
+  }
 
   dom.qualitySelect.addEventListener("change", () => {
     qualityMode = QUALITY_MODES[dom.qualitySelect.value] ? dom.qualitySelect.value : "medium";
@@ -331,6 +417,10 @@
   }
   if (dom.queueLoopBtn) {
     dom.queueLoopBtn.addEventListener("click", () => {
+      if (!canControlShowOps()) {
+        updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
+        return;
+      }
       queueLoop = !queueLoop;
       updateQueueUi(queueLoop ? "루프 켜짐" : "루프 꺼짐");
     });
@@ -345,57 +435,379 @@
     dom.queueClearBtn.addEventListener("click", () => clearQueueEvents());
   }
 
+  applyUiVisibilityMode();
+  if (adminUiMode) {
+    setupNetworkProfileUi();
+  }
   setupShowMedia();
   setupPlayerSystem();
   setupFirstPersonControls();
-  setupChatUi();
+  if (chatEnabled) {
+    setupChatUi();
+  }
   setupRealtime();
   loadQueueFromStorage(true);
   setDoorOpen(true);
+  refreshPortalState(true);
   updateQueueUi();
+  installDebugBridge();
+
+  function installDebugBridge() {
+    if (!adminUiMode) return;
+    if (typeof window === "undefined") return;
+
+    window.__performanceDebug = {
+      getState() {
+        return {
+          activeMap,
+          firstPersonEnabled,
+          pointerLocked,
+          isHostClient,
+          socketConnected,
+          selfSocketId,
+          roomPopulation,
+          showPlaying,
+          queuePlaying,
+          currentClipId,
+          lastNetworkActiveClipId,
+          playerFootY,
+          playerVelocityY,
+          playerGrounded,
+          moveState: { ...moveState },
+          camera: {
+            x: camera.position.x,
+            y: camera.position.y,
+            z: camera.position.z,
+            yaw: playerYaw,
+            pitch: playerPitch
+          }
+        };
+      },
+      emitStateNow() {
+        const payload = getLocalPlayerState();
+        if (socketConnected && socket) {
+          socket.emit("player:state", payload);
+        }
+        return payload;
+      },
+      forceJump() {
+        moveState.jump = true;
+        return this.getState();
+      },
+      teleport(x, z, mapName) {
+        if (mapName === "lobby" || mapName === "hall") {
+          setMap(mapName, true);
+        }
+        if (Number.isFinite(Number(x))) camera.position.x = Number(x);
+        if (Number.isFinite(Number(z))) camera.position.z = Number(z);
+        syncPlayerHeightToGround({ resetVelocity: true });
+        emitLocalPlayerState(true);
+        return this.getState();
+      },
+      setVertical(footY, velocityY = 0, grounded = false) {
+        playerFootY = Number.isFinite(Number(footY)) ? Number(footY) : playerFootY;
+        playerVelocityY = Number.isFinite(Number(velocityY)) ? Number(velocityY) : playerVelocityY;
+        playerGrounded = Boolean(grounded);
+        camera.position.y = playerFootY + PLAYER_EYE_HEIGHT[activeMap];
+        return this.getState();
+      },
+      simulateStep(options = {}) {
+        const steps = Math.max(1, Math.min(600, Number(options.steps) || 1));
+        const delta = Math.max(1 / 240, Math.min(0.1, Number(options.delta) || 1 / 60));
+        const forward = Number(options.forward) || 0;
+        const strafe = Number(options.strafe) || 0;
+        const withJump = Boolean(options.jump);
+
+        if (!firstPersonEnabled) {
+          setFirstPersonEnabled(true, { requestLock: false });
+        }
+
+        const prevState = { ...moveState };
+        moveState.forward = forward > 0;
+        moveState.backward = forward < 0;
+        moveState.right = strafe > 0;
+        moveState.left = strafe < 0;
+        moveState.run = Boolean(options.run);
+        if (withJump) {
+          moveState.jump = true;
+        }
+
+        for (let i = 0; i < steps; i += 1) {
+          updateFirstPersonMovement(delta);
+        }
+
+        Object.assign(moveState, prevState);
+        emitLocalPlayerState(true);
+        return this.getState();
+      }
+    };
+  }
+
+  function computePortalState(nowMs = Date.now()) {
+    const cycle = PORTAL_FLOW.cooldownSeconds + PORTAL_FLOW.warningSeconds + PORTAL_FLOW.openSeconds;
+    if (cycle <= 0) {
+      return { phase: "open", secondsLeft: 0, progress: 1 };
+    }
+
+    let elapsed = ((nowMs - PORTAL_FLOW.epochMs) / 1000) % cycle;
+    if (elapsed < 0) elapsed += cycle;
+
+    if (elapsed < PORTAL_FLOW.cooldownSeconds) {
+      const remaining = PORTAL_FLOW.cooldownSeconds - elapsed;
+      return {
+        phase: "cooldown",
+        secondsLeft: Math.max(0, Math.ceil(remaining)),
+        progress: elapsed / PORTAL_FLOW.cooldownSeconds
+      };
+    }
+
+    elapsed -= PORTAL_FLOW.cooldownSeconds;
+    if (elapsed < PORTAL_FLOW.warningSeconds) {
+      const remaining = PORTAL_FLOW.warningSeconds - elapsed;
+      return {
+        phase: "warning",
+        secondsLeft: Math.max(0, Math.ceil(remaining)),
+        progress: elapsed / PORTAL_FLOW.warningSeconds
+      };
+    }
+
+    elapsed -= PORTAL_FLOW.warningSeconds;
+    const remaining = PORTAL_FLOW.openSeconds - elapsed;
+    return {
+      phase: "open",
+      secondsLeft: Math.max(0, Math.ceil(remaining)),
+      progress: elapsed / PORTAL_FLOW.openSeconds
+    };
+  }
+
+  function getPortalPhaseSummary() {
+    if (!doorOpen) return "\uBB38 \uB2EB\uD798 - \uD638\uC2A4\uD2B8 \uB300\uAE30";
+    if (portalState.phase === "open") {
+      return isNearLobbyPortal()
+        ? "\uD3EC\uD0C8 \uAC1C\uBC29\uB428"
+        : "\uD3EC\uD0C8 \uAC1C\uBC29 \uB428 - \uC785\uAD6C \uC774\uB3D9";
+    }
+    if (portalState.phase === "warning") return "\uAC1C\uBC29 \uC900\uBE44 " + portalState.secondsLeft + "\uCD08";
+    return "\uD3EC\uD0C8 \uCDA9\uC804 " + portalState.secondsLeft + "\uCD08";
+  }
+
+  function setPortalTransition(active, label, title) {
+    if (!dom.portalTransition) return;
+    if (typeof label === "string" && dom.portalTransitionLabel) {
+      dom.portalTransitionLabel.textContent = label;
+    }
+    if (typeof title === "string" && dom.portalTransitionTitle) {
+      dom.portalTransitionTitle.textContent = title;
+    }
+    dom.portalTransition.classList.toggle("active", Boolean(active));
+    dom.portalTransition.setAttribute("aria-hidden", active ? "false" : "true");
+  }
+
+  function resolveExternalUrl(rawUrl) {
+    const text = String(rawUrl || "").trim();
+    if (!text) return "";
+    try {
+      const parsed = new URL(text, window.location.href);
+      const protocol = String(parsed.protocol || "").toLowerCase();
+      if (protocol !== "http:" && protocol !== "https:") return "";
+      return parsed.toString();
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function buildLobbyReturnUrl() {
+    const explicitReturnUrl = resolveExternalUrl(externalReturnUrlRaw);
+    if (explicitReturnUrl) {
+      return explicitReturnUrl;
+    }
+
+    if (!fromEmptines) {
+      return "";
+    }
+
+    try {
+      const fallback = new URL("/?zone=lobby&from=performance", window.location.href);
+      if (returnPortalHint && !fallback.searchParams.has("returnPortal")) {
+        fallback.searchParams.set("returnPortal", returnPortalHint);
+      }
+      return fallback.toString();
+    } catch (_error) {
+      return "/?zone=lobby&from=performance";
+    }
+  }
+
+  function isNearLobbyPortal(position = camera.position) {
+    if (!lobbyMap.portalGroup || typeof lobbyMap.portalGroup.getWorldPosition !== "function") {
+      return true;
+    }
+    lobbyMap.portalGroup.getWorldPosition(lobbyPortalWorldPosition);
+    const dx = position.x - lobbyPortalWorldPosition.x;
+    const dz = position.z - lobbyPortalWorldPosition.z;
+    return dx * dx + dz * dz <= LOBBY_PORTAL_ENTRY_RADIUS_SQ;
+  }
+
+  function updatePortalUiCopy(forceMapHint = false) {
+    if (activeMap !== "lobby") {
+      if (forceMapHint && dom.statusIntent) {
+        dom.statusIntent.textContent = MAP_META[activeMap].hint;
+      }
+      if (dom.portalPhaseNote) {
+        dom.portalPhaseNote.textContent = "\uB85C\uBE44\uC5D0\uC11C \uD3EC\uD0C8 \uC0C1\uD0DC\uB97C \uD655\uC778\uD558\uC138\uC694.";
+      }
+      updateDoorUi();
+      return;
+    }
+
+    const summary = getPortalPhaseSummary();
+
+    if (dom.statusIntent) {
+      const nearPortal = isNearLobbyPortal();
+      if (!doorOpen) {
+        dom.statusIntent.textContent = "\uBB38\uC774 \uB2EB\uD600 \uC788\uC2B5\uB2C8\uB2E4. \uD638\uC2A4\uD2B8\uAC00 \uBB38\uC744 \uC5F4\uBA74 \uD3EC\uD0C8 \uB300\uAE30 \uB2E8\uACC4\uAC00 \uC9C4\uD589\uB429\uB2C8\uB2E4.";
+      } else if (portalState.phase === "open" && nearPortal) {
+        dom.statusIntent.textContent = "\uD3EC\uD0C8\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. E\uB97C \uB20C\uB7EC \uACF5\uC5F0\uC7A5\uC73C\uB85C \uC785\uC7A5\uD558\uC138\uC694.";
+      } else if (portalState.phase === "open") {
+        dom.statusIntent.textContent = "\uD3EC\uD0C8\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uBCF5\uB3C4 \uB05D \uD3EC\uD0C8 \uADFC\uCC98\uC5D0\uC11C E\uB97C \uB20C\uB7EC \uC785\uC7A5\uD558\uC138\uC694.";
+      } else if (portalState.phase === "warning") {
+        dom.statusIntent.textContent = "\uD3EC\uD0C8 \uAC1C\uBC29 \uC900\uBE44 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uC785\uC7A5 \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
+      } else {
+        dom.statusIntent.textContent = "\uD3EC\uD0C8 \uCDA9\uC804 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uAC1C\uBC29\uB429\uB2C8\uB2E4.";
+      }
+    }
+
+    if (dom.portalPhaseNote) {
+      dom.portalPhaseNote.textContent = summary;
+    }
+
+    updateDoorUi();
+  }
+
+  function refreshPortalState(force) {
+    const next = computePortalState(Date.now());
+    portalState = next;
+    const signature = activeMap + "|" + (doorOpen ? 1 : 0) + "|" + next.phase + "|" + next.secondsLeft;
+    if (!force && signature === lastPortalUiSignature) {
+      return;
+    }
+    lastPortalUiSignature = signature;
+    updatePortalUiCopy(false);
+    updateHud();
+  }
 
   function enterHall() {
     if (activeMap !== "lobby" || transitionInFlight) return;
-    if (!doorOpen) {
-      dom.loading.textContent = "문이 닫혀 있습니다. 호스트가 문을 열어야 입장할 수 있습니다.";
+
+    refreshPortalState(false);
+
+    if (!isNearLobbyPortal()) {
+      dom.loading.textContent = "\uD3EC\uD0C8 \uADFC\uCC98\uC5D0\uC11C E\uB97C \uB20C\uB7EC \uC785\uC7A5\uD558\uC138\uC694.";
       dom.loading.classList.remove("hidden");
       setTimeout(() => {
         if (!transitionInFlight) {
           dom.loading.classList.add("hidden");
-          dom.loading.textContent = "로비 구성 중...";
+          dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
         }
       }, 900);
       return;
     }
+
+    if (!doorOpen) {
+      dom.loading.textContent = "\uBB38\uC774 \uB2EB\uD600 \uC788\uC2B5\uB2C8\uB2E4. \uD638\uC2A4\uD2B8\uAC00 \uBB38\uC744 \uC5F4\uC5B4\uC57C \uC785\uC7A5\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
+      dom.loading.classList.remove("hidden");
+      setTimeout(() => {
+        if (!transitionInFlight) {
+          dom.loading.classList.add("hidden");
+          dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
+        }
+      }, 900);
+      return;
+    }
+
+    if (portalState.phase !== "open") {
+      const waitText = portalState.phase === "warning"
+        ? "\uD3EC\uD0C8 \uAC1C\uBC29 \uC900\uBE44 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uC785\uC7A5 \uAC00\uB2A5\uD569\uB2C8\uB2E4."
+        : "\uD3EC\uD0C8 \uCDA9\uC804 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uAC1C\uBC29\uB429\uB2C8\uB2E4.";
+      dom.loading.textContent = waitText;
+      dom.loading.classList.remove("hidden");
+      setTimeout(() => {
+        if (!transitionInFlight) {
+          dom.loading.classList.add("hidden");
+          dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
+        }
+      }, 900);
+      return;
+    }
+
     transitionInFlight = true;
-    dom.loading.textContent = "포탈 통과 중...";
+    setPortalTransition(true, "\uD3EC\uD0C8 \uB3D9\uAE30\uD654", "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 \uC911...");
+    dom.loading.textContent = "\uD3EC\uD0C8 \uD1B5\uACFC \uC911...";
     dom.loading.classList.remove("hidden");
+
     setTimeout(() => {
       setMap("hall", true);
+      setPortalTransition(false);
       setTimeout(() => {
         dom.loading.classList.add("hidden");
-        dom.loading.textContent = "로비 구성 중...";
+        dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
         transitionInFlight = false;
-      }, 220);
-    }, 420);
+      }, 180);
+    }, 680);
   }
 
-  function setDoorOpen(nextOpen) {
-    doorOpen = Boolean(nextOpen);
+  function setDoorOpen(nextOpen, options = {}) {
+    const { broadcast = socketConnected && isHostClient } = options;
+    const next = Boolean(nextOpen);
+    if (doorOpen === next) {
+      return;
+    }
+    doorOpen = next;
     doorTarget = doorOpen ? 1 : 0;
     if (dom.hostDoorBtn && isHostClient) {
-      dom.hostDoorBtn.textContent = doorOpen ? "호스트 문 닫기" : "호스트 문 열기";
+      dom.hostDoorBtn.textContent = doorOpen ? "\uD638\uC2A4\uD2B8 \uBB38 \uB2EB\uAE30" : "\uD638\uC2A4\uD2B8 \uBB38 \uC5F4\uAE30";
     }
-    updateDoorUi();
+    if (broadcast && socketConnected && socket && isHostClient) {
+      socket.emit("door:set", { open: doorOpen, ts: Date.now() });
+    }
+    refreshPortalState(true);
     updateHud();
+  }
+
+  function applyDoorStateFromNetwork(nextOpen) {
+    setDoorOpen(Boolean(nextOpen), { broadcast: false });
   }
 
   function updateDoorUi() {
     if (!dom.portalActionBtn) return;
     const inLobby = activeMap === "lobby";
-    const canEnter = inLobby && doorOpen;
+    const portalOpen = portalState.phase === "open";
+    const nearPortal = isNearLobbyPortal();
+    const canEnter = inLobby && doorOpen && portalOpen && nearPortal;
     dom.portalActionBtn.disabled = !canEnter;
-    dom.portalActionBtn.textContent = canEnter ? "공연장 입장 (E)" : "문 닫힘 - 호스트 대기";
+
+    if (!inLobby) {
+      dom.portalActionBtn.textContent = "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 (E)";
+      return;
+    }
+
+    if (!doorOpen) {
+      dom.portalActionBtn.textContent = "\uBB38 \uB2EB\uD798 - \uD638\uC2A4\uD2B8 \uB300\uAE30";
+      return;
+    }
+
+    if (!portalOpen) {
+      dom.portalActionBtn.textContent = portalState.phase === "warning"
+        ? "\uAC1C\uBC29 \uC900\uBE44 " + portalState.secondsLeft + "\uCD08"
+        : "\uD3EC\uD0C8 \uCDA9\uC804 " + portalState.secondsLeft + "\uCD08";
+      return;
+    }
+
+    if (!nearPortal) {
+      dom.portalActionBtn.textContent = "\uD3EC\uD0C8 \uADFC\uCC98\uB85C \uC774\uB3D9";
+      return;
+    }
+
+    dom.portalActionBtn.textContent = "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 (E)";
   }
 
   function setMap(nextMap, immediate) {
@@ -415,12 +827,16 @@
     updateRemotePlayerVisibility();
 
     if (firstPersonEnabled) {
-      camera.position.y = PLAYER_EYE_HEIGHT[activeMap];
+      syncPlayerHeightToGround({ resetVelocity: true });
       syncOrbitTargetToCamera();
     }
 
     if (activeMap === "hall" && pendingShowStartFromHost && showPlaying) {
-      startShow({ broadcast: false, allowNonHost: true });
+      startShow({ broadcast: false, allowNonHost: true, startOffsetSeconds: getNetworkShowOffsetSeconds() });
+    }
+
+    if (activeMap === "hall") {
+      applyLatestNetworkClip();
     }
 
     emitLocalPlayerState(true);
@@ -464,21 +880,87 @@
   }
 
   function updateUiByMap() {
-    if (dom.statusIntent) dom.statusIntent.textContent = MAP_META[activeMap].hint;
+    updatePortalUiCopy(true);
     dom.portalActionBtn.classList.toggle("hidden", activeMap !== "lobby");
     updateDoorUi();
-    const showReturn = activeMap === "hall" || fromEmptines;
+    const hasExternalReturn = Boolean(buildLobbyReturnUrl());
+    const showReturn = activeMap === "hall" || hasExternalReturn;
     dom.returnLobbyBtn.classList.toggle("hidden", !showReturn);
     dom.returnLobbyBtn.textContent = activeMap === "hall" ? "\uB85C\uBE44\uB85C \uB3CC\uC544\uAC00\uAE30" : "EMPTINES\uB85C \uBCF5\uADC0";
     const hallOnly = activeMap === "hall";
-    dom.modeButtons.forEach((button) => {
-      button.disabled = !hallOnly;
-    });
-    dom.occupancyRange.disabled = !hallOnly;
+    updateFxButtons();
     updatePresetButtons();
     updateQueueUi();
     if (firstPersonEnabled) {
       syncYawPitchFromCamera();
+    }
+  }
+
+function updateFxButtons() {
+    const hallOnly = activeMap === "hall";
+    const canControl = hallOnly && canControlShowOps();
+
+    if (dom.fxParticlesBtn) {
+      dom.fxParticlesBtn.classList.toggle("active", fxParticlesEnabled);
+      dom.fxParticlesBtn.textContent = fxParticlesEnabled ? "\ud30c\ud2f0\ud074 \ub044\uae30" : "\ud30c\ud2f0\ud074 \ucf1c\uae30";
+      dom.fxParticlesBtn.disabled = !canControl;
+    }
+
+    if (dom.fxLightsBtn) {
+      dom.fxLightsBtn.classList.toggle("active", fxLightsEnabled);
+      dom.fxLightsBtn.textContent = fxLightsEnabled ? "\ubd88 \ub044\uae30" : "\ubd88 \ucf1c\uae30";
+      dom.fxLightsBtn.disabled = !canControl;
+    }
+
+    if (dom.fxFireworksBtn) {
+      dom.fxFireworksBtn.disabled = !canControl;
+    }
+  }
+
+  function applyFxState(nextState, options = {}) {
+    const { broadcast = socketConnected && isHostClient, fromNetwork = false } = options;
+    let changed = false;
+
+    if (nextState && Object.prototype.hasOwnProperty.call(nextState, "particles")) {
+      const nextParticles = Boolean(nextState.particles);
+      if (fxParticlesEnabled !== nextParticles) {
+        fxParticlesEnabled = nextParticles;
+        changed = true;
+      }
+    }
+
+    if (nextState && Object.prototype.hasOwnProperty.call(nextState, "lights")) {
+      const nextLights = Boolean(nextState.lights);
+      if (fxLightsEnabled !== nextLights) {
+        fxLightsEnabled = nextLights;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      applyQuality();
+    }
+
+    updateFxButtons();
+
+    if (broadcast && socketConnected && isHostClient && socket && !fromNetwork) {
+      socket.emit("fx:set", {
+        particles: fxParticlesEnabled,
+        lights: fxLightsEnabled,
+        ts: Date.now()
+      });
+    }
+  }
+
+  function requestFireworkBurst(options = {}) {
+    const { broadcast = socketConnected && isHostClient, fromNetwork = false } = options;
+    pendingFireworkBursts += 1;
+
+    if (broadcast && socketConnected && isHostClient && socket && !fromNetwork) {
+      socket.emit("fx:set", {
+        burst: true,
+        ts: Date.now()
+      });
     }
   }
 
@@ -490,7 +972,7 @@ function applyQuality() {
     const shadowSize = quality.shadows ? (isMobile ? 512 : 1024) : 256;
     hallMap.stageWash.shadow.mapSize.width = shadowSize;
     hallMap.stageWash.shadow.mapSize.height = shadowSize;
-    hallMap.particles.visible = quality.particles && activeMap === "hall";
+    hallMap.particles.visible = quality.particles && fxParticlesEnabled && activeMap === "hall";
     updateHud();
   }
 
@@ -518,7 +1000,7 @@ function applyQuality() {
         updateShowStartButton();
 
         if (pendingShowStartFromHost && showPlaying && activeMap === "hall") {
-          startShow({ broadcast: false, allowNonHost: true });
+          startShow({ broadcast: false, allowNonHost: true, startOffsetSeconds: getNetworkShowOffsetSeconds() });
         }
       },
       { once: true }
@@ -538,7 +1020,9 @@ function applyQuality() {
     bg.addEventListener("error", () => {
       stageVideoReady = false;
       updateShowStartButton();
-      updateQueueUi("\uBC30\uACBD \uC601\uC0C1\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      const bgSrc = SHOW_VIDEO_PATH;
+      updateQueueUi(`\uBC30\uACBD \uC601\uC0C1 \uB85C\uB4DC \uC2E4\uD328: ${bgSrc}`);
+      appendChatLine("시스템", `배경 영상 로드 실패: ${bgSrc}`, "system");
     });
 
     const chroma = document.createElement("video");
@@ -567,9 +1051,24 @@ function applyQuality() {
     hallMap.performerMat.needsUpdate = true;
     chromaVideoReady = true;
 
+    if (showPlaying && activeMap === "hall") {
+      const autoClipId = normalizeClipId(currentClipId) || DEFAULT_CLIP_ID;
+      if (!socketConnected || isHostClient) {
+        playPerformerClip(autoClipId, {
+          record: false,
+          broadcast: socketConnected && isHostClient,
+          silent: true
+        });
+      } else {
+        applyLatestNetworkClip({ force: true });
+      }
+    }
+
     chroma.addEventListener("error", () => {
       chromaVideoReady = false;
-      updateQueueUi("\uD37C\uD3EC\uBA38 \uD074\uB9BD\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      const failedClipPath = String(chroma.getAttribute("src") || CLIP_VIDEO_PATHS[DEFAULT_CLIP_ID]);
+      updateQueueUi(`\uD37C\uD3EC\uBA38 \uD074\uB9BD \uB85C\uB4DC \uC2E4\uD328: ${failedClipPath}`);
+      appendChatLine("시스템", `퍼포머 클립 로드 실패: ${failedClipPath}`, "system");
     });
 
     bg.load();
@@ -589,6 +1088,8 @@ function applyQuality() {
     const { broadcast = false } = options;
     showPlaying = false;
     pendingShowStartFromHost = false;
+    lastNetworkShowStartedAtMs = 0;
+    lastNetworkActiveClipId = 0;
     setScreenVideoEnabled(false);
 
     if (stageVideo) {
@@ -613,8 +1114,18 @@ function applyQuality() {
     }
   }
 
+  function getNetworkShowOffsetSeconds() {
+    if (!socketConnected || isHostClient) {
+      return 0;
+    }
+    if (!Number.isFinite(lastNetworkShowStartedAtMs) || lastNetworkShowStartedAtMs <= 0) {
+      return 0;
+    }
+    return Math.max(0, (Date.now() - lastNetworkShowStartedAtMs) / 1000);
+  }
+
   function startShow(options = {}) {
-    const { broadcast = true, allowNonHost = false } = options;
+    const { broadcast = true, allowNonHost = false, startOffsetSeconds = 0 } = options;
 
     if (socketConnected && broadcast && !isHostClient && !allowNonHost) {
       updateQueueUi("\uD638\uC2A4\uD2B8\uB9CC \uACF5\uC5F0\uC744 \uC2DC\uC791\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
@@ -631,7 +1142,13 @@ function applyQuality() {
     pendingShowStartFromHost = false;
     showPlaying = true;
     stageVideo.pause();
-    stageVideo.currentTime = 0;
+    const offsetSec = Math.max(0, Number(startOffsetSeconds) || 0);
+    if (Number.isFinite(stageVideo.duration) && stageVideo.duration > 0) {
+      const safeMax = Math.max(0, stageVideo.duration - 0.05);
+      stageVideo.currentTime = Math.min(offsetSec, safeMax);
+    } else {
+      stageVideo.currentTime = offsetSec;
+    }
     stageVideo.muted = false;
     stageVideo.volume = 1.0;
     setScreenVideoEnabled(true);
@@ -654,9 +1171,20 @@ function applyQuality() {
 
     updateShowStartButton();
 
-    if (broadcast && socketConnected && isHostClient && socket) {
-      socket.emit("show:start");
+    const startClipId = normalizeClipId(currentClipId) || DEFAULT_CLIP_ID;
+    if (!socketConnected || isHostClient) {
+      playPerformerClip(startClipId, {
+        record: false,
+        broadcast: socketConnected && isHostClient && broadcast,
+        silent: true
+      });
     }
+
+    if (broadcast && socketConnected && isHostClient && socket) {
+      socket.emit("show:start", { activeClip: startClipId });
+    }
+
+    applyLatestNetworkClip();
   }
 
   function syncShowMediaState() {
@@ -695,21 +1223,66 @@ function applyQuality() {
     return Math.max(0, stageVideo.currentTime);
   }
 
+  function normalizeClipId(value) {
+    const clipId = Math.trunc(Number(value));
+    if (!Number.isFinite(clipId)) return 0;
+    if (clipId < 1 || clipId > CLIP_IDS.length) return 0;
+    return clipId;
+  }
+
+  function applyLatestNetworkClip(options = {}) {
+    const { force = false } = options;
+    if (!socketConnected || isHostClient) return;
+    if (!showPlaying || activeMap !== "hall") return;
+    const clipId = normalizeClipId(lastNetworkActiveClipId);
+    if (!clipId) return;
+
+    const alreadyVisible =
+      currentClipId === clipId &&
+      Boolean(hallMap.performerPlane && hallMap.performerPlane.visible);
+    if (!force && alreadyVisible) return;
+
+    playPerformerClip(clipId, {
+      record: false,
+      broadcast: false,
+      fromNetwork: true,
+      silent: true
+    });
+  }
+
   function playPerformerClip(clipId, options = {}) {
-    const { record = true } = options;
+    const {
+      record = true,
+      broadcast = socketConnected && isHostClient,
+      fromNetwork = false,
+      silent = false
+    } = options;
+
     if (activeMap !== "hall") {
-      updateQueueUi("\uACF5\uC5F0\uC7A5 \uC548\uC5D0\uC11C\uB9CC \uB3D9\uC791\uD569\uB2C8\uB2E4.");
-      return;
-    }
-    if (!Number.isInteger(clipId) || clipId < 1 || clipId > CLIP_IDS.length) {
-      return;
-    }
-    if (!chromaVideo || !chromaVideoReady) {
-      updateQueueUi("\uD074\uB9BD \uC601\uC0C1\uC744 \uC544\uC9C1 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      if (!silent) {
+        updateQueueUi("\uACF5\uC5F0\uC7A5 \uC548\uC5D0\uC11C\uB9CC \uB3D9\uC791\uD569\uB2C8\uB2E4.");
+      }
       return;
     }
 
-    const nextSrc = CLIP_VIDEO_PATHS[clipId];
+    if (!fromNetwork && !canControlShowOps()) {
+      updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
+      return;
+    }
+
+    const nextClipId = normalizeClipId(clipId);
+    if (!nextClipId) {
+      return;
+    }
+
+    if (!chromaVideo || !chromaVideoReady) {
+      if (!silent) {
+        updateQueueUi("\uD074\uB9BD \uC601\uC0C1\uC744 \uC544\uC9C1 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      }
+      return;
+    }
+
+    const nextSrc = CLIP_VIDEO_PATHS[nextClipId];
     const currentSrc = String(chromaVideo.getAttribute("src") || "");
     if (currentSrc !== nextSrc) {
       chromaVideo.pause();
@@ -735,15 +1308,26 @@ function applyQuality() {
       hallMap.performerPlane.visible = true;
     }
 
-    currentClipId = clipId;
+    currentClipId = nextClipId;
+    if (fromNetwork) {
+      lastNetworkActiveClipId = nextClipId;
+    }
     updateClipButtons();
+
+    if (broadcast && socketConnected && isHostClient && socket && !fromNetwork) {
+      socket.emit("performer:clip", {
+        clipId: nextClipId,
+        songTime: Number(getSongTimeSeconds().toFixed(3)),
+        ts: Date.now()
+      });
+    }
 
     if (record && queueRecording) {
       if (!showPlaying || !stageVideo || stageVideo.ended) {
         startShow();
       }
       const eventTime = Number(getSongTimeSeconds().toFixed(3));
-      queueEvents.push({ t: eventTime, clip: clipId });
+      queueEvents.push({ t: eventTime, clip: nextClipId });
       queueEvents.sort((a, b) => a.t - b.t);
       updateQueueUi(`${queueEvents.length}\uAC1C \uD050 \uC800\uC7A5`);
     }
@@ -752,6 +1336,11 @@ function applyQuality() {
 function toggleQueueRecording() {
     if (activeMap !== "hall") {
       updateQueueUi("\uACF5\uC5F0\uC7A5 \uC548\uC5D0\uC11C\uB9CC \uB3D9\uC791\uD569\uB2C8\uB2E4.");
+      return;
+    }
+
+    if (!canControlShowOps()) {
+      updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
       return;
     }
 
@@ -772,6 +1361,10 @@ function toggleQueueRecording() {
 function startQueuePlayback(resetSong) {
     if (activeMap !== "hall") {
       updateQueueUi("\uACF5\uC5F0\uC7A5 \uC548\uC5D0\uC11C\uB9CC \uB3D9\uC791\uD569\uB2C8\uB2E4.");
+      return;
+    }
+    if (!canControlShowOps()) {
+      updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
       return;
     }
     if (queueEvents.length === 0) {
@@ -808,6 +1401,10 @@ function processQueuePlayback() {
   }
 
 function saveQueueToStorage() {
+    if (!canControlShowOps()) {
+      updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
+      return;
+    }
     try {
       const payload = {
         version: 1,
@@ -856,6 +1453,10 @@ function loadQueueFromStorage(silent) {
   }
 
 function clearQueueEvents() {
+    if (!canControlShowOps()) {
+      updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
+      return;
+    }
     queueRecording = false;
     queuePlaying = false;
     queuePlayIndex = 0;
@@ -864,11 +1465,16 @@ function clearQueueEvents() {
     updateQueueUi("\uD050\uB97C \uCD08\uAE30\uD654\uD588\uC2B5\uB2C8\uB2E4.");
   }
 
+function canControlShowOps() {
+    return !socketConnected || isHostClient;
+  }
+
 function updateClipButtons() {
+    const canControl = canControlShowOps();
     dom.clipButtons.forEach((button) => {
       const clipId = Number(button.dataset.clipId || 0);
       button.classList.toggle("active", clipId === currentClipId);
-      button.disabled = activeMap !== "hall";
+      button.disabled = activeMap !== "hall" || !canControl;
     });
   }
 
@@ -879,32 +1485,43 @@ function updateClipButtons() {
 
     updateClipButtons();
     const hallOnly = activeMap === "hall";
+    const canControl = canControlShowOps();
 
     if (dom.queueRecordBtn) {
       dom.queueRecordBtn.classList.toggle("active", queueRecording);
-      dom.queueRecordBtn.textContent = queueRecording ? "\uD050 \uAE30\uB85D \uC911" : "\uD050 \uAE30\uB85D \uC2DC\uC791";
-      dom.queueRecordBtn.disabled = !hallOnly;
+      dom.queueRecordBtn.textContent = queueRecording ? "큐 기록 중" : "큐 기록 시작";
+      dom.queueRecordBtn.disabled = !hallOnly || !canControl;
     }
 
     if (dom.queuePlayBtn) {
       dom.queuePlayBtn.classList.toggle("active", queuePlaying);
-      dom.queuePlayBtn.textContent = queuePlaying ? "\uD050 \uC7AC\uC0DD \uC911" : "\uD050 \uC7AC\uC0DD";
-      dom.queuePlayBtn.disabled = !hallOnly || queueEvents.length === 0;
+      dom.queuePlayBtn.textContent = queuePlaying ? "큐 재생 중" : "큐 재생";
+      dom.queuePlayBtn.disabled = !hallOnly || !canControl || queueEvents.length === 0;
     }
 
     if (dom.queueLoopBtn) {
       dom.queueLoopBtn.classList.toggle("active", queueLoop);
-      dom.queueLoopBtn.textContent = queueLoop ? "\uB8E8\uD504 \uCF1C\uC9D0" : "\uB8E8\uD504 \uAEBC\uC9D0";
-      dom.queueLoopBtn.disabled = !hallOnly;
+      dom.queueLoopBtn.textContent = queueLoop ? "루프 켜짐" : "루프 꺼짐";
+      dom.queueLoopBtn.disabled = !hallOnly || !canControl;
     }
 
     if (dom.queueSaveBtn) {
-      dom.queueSaveBtn.disabled = queueEvents.length === 0;
+      dom.queueSaveBtn.disabled = !canControl || queueEvents.length === 0;
+    }
+
+    if (dom.queueLoadBtn) {
+      dom.queueLoadBtn.disabled = !canControl;
+    }
+
+    if (dom.queueClearBtn) {
+      dom.queueClearBtn.disabled = !canControl;
     }
 
     if (dom.queueStatus) {
-      const base = `\uD050 ${queueRecording ? "\uAE30\uB85D" : "\uB300\uAE30"} | \uC774\uBCA4\uD2B8 ${queueEvents.length}\uAC1C | ${queuePlaying ? "\uC7AC\uC0DD \uC911" : "\uC7AC\uC0DD \uB300\uAE30"}`;
-      dom.queueStatus.textContent = queueLastMessage ? `${base} | ${queueLastMessage}` : base;
+      const base = `큐 ${queueRecording ? "기록" : "대기"} | 이벤트 ${queueEvents.length}개 | ${queuePlaying ? "재생 중" : "재생 대기"}`;
+      const roleText = canControl ? "조작 가능" : "호스트 전용";
+      const withRole = `${base} | ${roleText}`;
+      dom.queueStatus.textContent = queueLastMessage ? `${withRole} | ${queueLastMessage}` : withRole;
     }
   }
 
@@ -926,9 +1543,19 @@ function updateShowStartButton() {
 function updateHud() {
     dom.hudMap.textContent = MAP_META[activeMap].label;
     dom.hudFps.textContent = String(fpsValue);
-    dom.hudSeats.textContent = `${activeAudience} / ${CAPACITY}`;
+    dom.hudSeats.textContent = String(activeAudience);
     dom.hudQuality.textContent = ({ low: "\uB0AE\uC74C", medium: "\uBCF4\uD1B5", high: "\uB192\uC74C" })[qualityMode] || "\uBCF4\uD1B5";
-    dom.hudPortal.textContent = doorOpen ? "\uC5F4\uB9BC" : "\uB2EB\uD798";
+    if (!doorOpen) {
+      dom.hudPortal.textContent = "\uB2EB\uD798";
+    } else if (activeMap === "lobby" && portalState.phase !== "open") {
+      dom.hudPortal.textContent = portalState.phase === "warning"
+        ? "\uC900\uBE44 " + portalState.secondsLeft + "s"
+        : "\uCDA9\uC804 " + portalState.secondsLeft + "s";
+    } else if (activeMap === "lobby") {
+      dom.hudPortal.textContent = "\uAC1C\uBC29";
+    } else {
+      dom.hudPortal.textContent = "\uC5F4\uB9BC";
+    }
     dom.hudDrawcalls.textContent = String(renderer.info.render.calls || 0);
 
     if (dom.hudStatus) {
@@ -949,31 +1576,170 @@ function clampNumber(value, min, max) {
     return Math.min(max, Math.max(min, value));
   }
 
+  function setElementHidden(element, hidden) {
+    if (!element) return;
+    element.classList.toggle("hidden", Boolean(hidden));
+  }
+
+  function applyUiVisibilityMode() {
+    const hideOptionalUi = !adminUiMode;
+    setElementHidden(dom.introStats, hideOptionalUi);
+    setElementHidden(dom.networkPanel, hideOptionalUi);
+    setElementHidden(dom.chatUi, !chatEnabled);
+    setElementHidden(dom.hudSeatsChip, hideOptionalUi);
+    setElementHidden(dom.hudPlayersRow, true);
+    setElementHidden(dom.statCapacityCard, true);
+
+    activeAudience = CAPACITY;
+    if (dom.statSeats) {
+      dom.statSeats.textContent = hideOptionalUi ? "" : String(activeAudience);
+    }
+
+    updateFxButtons();
+  }
+
+  function getLobbyHalfWidth(z) {
+    return z > LOBBY_BOUNDS.corridorStartZ ? LOBBY_BOUNDS.corridorHalfWidth : LOBBY_BOUNDS.lobbyHalfWidth;
+  }
+
   function clampLobbyPoint(point) {
-    point.z = clampNumber(point.z, 3.2, 45.2);
-    const halfWidth = point.z > 23 ? 3.55 : 13.2;
+    point.z = clampNumber(point.z, LOBBY_BOUNDS.minZ, LOBBY_BOUNDS.maxZ);
+    const halfWidth = getLobbyHalfWidth(point.z);
     point.x = clampNumber(point.x, -halfWidth, halfWidth);
+  }
+
+  function resolveLobbyHorizontalPosition(nextPos) {
+    clampLobbyPoint(nextPos);
+
+    if (doorOpen) return;
+    if (Math.abs(nextPos.x) > LOBBY_BOUNDS.closedDoorHalfGap) return;
+    if (nextPos.z <= LOBBY_BOUNDS.closedDoorBarrierZ) return;
+
+    nextPos.z = LOBBY_BOUNDS.closedDoorBarrierZ;
+  }
+
+  function isInsideHallStage(x, z, margin = 0) {
+    return (
+      x >= HALL_STAGE_BOUNDS.minX + margin &&
+      x <= HALL_STAGE_BOUNDS.maxX - margin &&
+      z >= HALL_STAGE_BOUNDS.minZ + margin &&
+      z <= HALL_STAGE_BOUNDS.maxZ - margin
+    );
+  }
+
+  function resolveHallHorizontalPosition(nextPos, prevPos) {
+    nextPos.x = clampNumber(nextPos.x, -44, 44);
+    nextPos.z = clampNumber(nextPos.z, 38, 160);
+
+    const stageMinX = HALL_STAGE_BOUNDS.minX - PLAYER_COLLISION_RADIUS;
+    const stageMaxX = HALL_STAGE_BOUNDS.maxX + PLAYER_COLLISION_RADIUS;
+    const stageMinZ = HALL_STAGE_BOUNDS.minZ - PLAYER_COLLISION_RADIUS;
+    const stageMaxZ = HALL_STAGE_BOUNDS.maxZ + PLAYER_COLLISION_RADIUS;
+
+    const insideStageWall =
+      nextPos.x >= stageMinX &&
+      nextPos.x <= stageMaxX &&
+      nextPos.z >= stageMinZ &&
+      nextPos.z <= stageMaxZ;
+
+    const canEnterStage = playerFootY >= HALL_STAGE_BOUNDS.height - 1.0;
+    if (insideStageWall && !canEnterStage) {
+      if (prevPos.z <= stageMinZ) {
+        nextPos.z = stageMinZ;
+      } else if (prevPos.z >= stageMaxZ) {
+        nextPos.z = stageMaxZ;
+      } else if (prevPos.x <= stageMinX) {
+        nextPos.x = stageMinX;
+      } else if (prevPos.x >= stageMaxX) {
+        nextPos.x = stageMaxX;
+      } else {
+        const distances = [
+          Math.abs(nextPos.z - stageMinZ),
+          Math.abs(stageMaxZ - nextPos.z),
+          Math.abs(nextPos.x - stageMinX),
+          Math.abs(stageMaxX - nextPos.x)
+        ];
+        const minDistance = Math.min(...distances);
+        if (minDistance === distances[0]) nextPos.z = stageMinZ;
+        else if (minDistance === distances[1]) nextPos.z = stageMaxZ;
+        else if (minDistance === distances[2]) nextPos.x = stageMinX;
+        else nextPos.x = stageMaxX;
+      }
+    }
+
+    resolveHallSeatCollisions(nextPos, prevPos);
+  }
+
+  function resolveHallSeatCollisions(nextPos, prevPos) {
+    if (!hallSeatColliders.length) return;
+
+    for (let i = 0; i < hallSeatColliders.length; i += 1) {
+      const seat = hallSeatColliders[i];
+      const minDist = PLAYER_COLLISION_RADIUS + seat.radius;
+      const minDistSq = minDist * minDist;
+      const dx = nextPos.x - seat.x;
+      const dz = nextPos.z - seat.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq >= minDistSq) continue;
+
+      let pushX = dx;
+      let pushZ = dz;
+
+      if (Math.abs(pushX) < 1e-5 && Math.abs(pushZ) < 1e-5) {
+        const prevX = Number.isFinite(prevPos?.x) ? prevPos.x : seat.x + 1;
+        const prevZ = Number.isFinite(prevPos?.z) ? prevPos.z : seat.z;
+        pushX = nextPos.x - prevX;
+        pushZ = nextPos.z - prevZ;
+      }
+
+      if (Math.abs(pushX) < 1e-5 && Math.abs(pushZ) < 1e-5) {
+        pushX = 1;
+        pushZ = 0;
+      }
+
+      const len = Math.hypot(pushX, pushZ) || 1;
+      nextPos.x = seat.x + (pushX / len) * minDist;
+      nextPos.z = seat.z + (pushZ / len) * minDist;
+    }
+  }
+
+  function getGroundHeightAt(x, z, mapName) {
+    if (mapName === "hall" && isInsideHallStage(x, z)) {
+      return HALL_STAGE_BOUNDS.height;
+    }
+    return 0;
+  }
+
+  function syncPlayerHeightToGround(options = {}) {
+    const { resetVelocity = true } = options;
+    playerFootY = getGroundHeightAt(camera.position.x, camera.position.z, activeMap);
+    if (resetVelocity) {
+      playerVelocityY = 0;
+    }
+    playerGrounded = true;
+    camera.position.y = playerFootY + PLAYER_EYE_HEIGHT[activeMap];
   }
 
   function applyCameraCollision() {
     if (activeMap === "lobby") {
-      clampLobbyPoint(camera.position);
       if (firstPersonEnabled) {
-        camera.position.y = PLAYER_EYE_HEIGHT.lobby;
+        resolveLobbyHorizontalPosition(camera.position);
         return;
       }
+      clampLobbyPoint(camera.position);
       clampLobbyPoint(controls.target);
       camera.position.y = clampNumber(camera.position.y, 1.6, 16);
       controls.target.y = clampNumber(controls.target.y, 1.2, 7.5);
       return;
     }
 
-    camera.position.x = clampNumber(camera.position.x, -44, 44);
-    camera.position.z = clampNumber(camera.position.z, 38, 160);
     if (firstPersonEnabled) {
-      camera.position.y = PLAYER_EYE_HEIGHT.hall;
+      resolveHallHorizontalPosition(camera.position, camera.position);
       return;
     }
+
+    camera.position.x = clampNumber(camera.position.x, -44, 44);
+    camera.position.z = clampNumber(camera.position.z, 38, 160);
     camera.position.y = clampNumber(camera.position.y, 2, 32);
     controls.target.x = clampNumber(controls.target.x, -42, 42);
     controls.target.z = clampNumber(controls.target.z, 44, 158);
@@ -982,13 +1748,46 @@ function clampNumber(value, min, max) {
 
   function animateLobby(time) {
     const pulse = 0.5 + 0.5 * Math.sin(time * 2.6);
-    lobbyMap.portalRing.material.emissiveIntensity = 0.74 + pulse * 0.56;
-    lobbyMap.portalCore.material.opacity = 0.18 + pulse * 0.22;
-    lobbyMap.portalGlow.material.opacity = 0.26 + pulse * 0.32;
-    lobbyMap.portalGroup.scale.setScalar(1 + pulse * 0.03);
+    const phase = doorOpen ? portalState.phase : "locked";
+
+    let ringColor = 0x53d8ff;
+    let ringIntensity = 0.38;
+    let coreOpacity = 0.14;
+    let glowOpacity = 0.2;
+    let scale = 1 + pulse * 0.015;
+
+    if (phase === "warning") {
+      ringColor = 0xffb84d;
+      ringIntensity = 0.65 + pulse * 0.42;
+      coreOpacity = 0.17 + pulse * 0.18;
+      glowOpacity = 0.24 + pulse * 0.2;
+      scale = 1 + pulse * 0.024;
+    } else if (phase === "open") {
+      ringColor = 0x35ef8d;
+      ringIntensity = 0.94 + pulse * 0.76;
+      coreOpacity = 0.22 + pulse * 0.24;
+      glowOpacity = 0.34 + pulse * 0.28;
+      scale = 1 + pulse * 0.042;
+    } else if (phase === "locked") {
+      ringColor = 0xff4d73;
+      ringIntensity = 0.26 + pulse * 0.16;
+      coreOpacity = 0.1 + pulse * 0.08;
+      glowOpacity = 0.12 + pulse * 0.1;
+      scale = 0.985 + pulse * 0.01;
+    }
+
+    lobbyMap.portalRing.material.color.setHex(ringColor);
+    lobbyMap.portalRing.material.emissive.setHex(ringColor);
+    lobbyMap.portalCore.material.color.setHex(ringColor);
+    lobbyMap.portalGlow.material.color.setHex(ringColor);
+    lobbyMap.portalRing.material.emissiveIntensity = ringIntensity;
+    lobbyMap.portalCore.material.opacity = coreOpacity;
+    lobbyMap.portalGlow.material.opacity = glowOpacity;
+    lobbyMap.portalGroup.scale.setScalar(scale);
 
     lobbyMap.corridorStrips.forEach((strip, index) => {
-      strip.material.emissiveIntensity = 0.18 + Math.sin(time * 2.2 + index * 0.4) * 0.14;
+      const phaseBoost = phase === "open" ? 0.22 : phase === "warning" ? 0.14 : 0.08;
+      strip.material.emissiveIntensity = 0.12 + phaseBoost + Math.sin(time * 2.2 + index * 0.4) * 0.12;
     });
   }
 
@@ -1007,15 +1806,18 @@ function clampNumber(value, min, max) {
     }
     hallMap.edgeMat.emissiveIntensity = 0.42 + Math.sin(time * 3.8) * (0.12 + mode.screenPulse * 0.42);
 
+    const lightsActive = fxLightsEnabled;
+    hallMap.stageWash.intensity = lightsActive ? 1.8 : 0.18;
+
     hallMap.movingLights.forEach((entry, index) => {
       entry.target.position.x = Math.sin(time * entry.speedX + entry.offset) * 18;
       entry.target.position.z = -58 + Math.cos(time * entry.speedZ + entry.offset + index * 0.3) * 12;
       entry.beam.lookAt(entry.target.position);
-      entry.light.intensity = entry.baseIntensity * mode.lightBoost;
-      entry.beam.material.opacity = 0.08 + mode.screenPulse * 0.12;
+      entry.light.intensity = lightsActive ? entry.baseIntensity * mode.lightBoost : 0.02;
+      entry.beam.material.opacity = lightsActive ? 0.08 + mode.screenPulse * 0.12 : 0.02;
     });
 
-    updateShowFlashes(mode, time, delta);
+    updateShowFlashes(mode, time, delta, lightsActive);
     updateFireworks(mode, delta);
 
     if (!hallMap.particles.visible) return;
@@ -1033,10 +1835,10 @@ function clampNumber(value, min, max) {
     hallMap.particles.geometry.attributes.position.needsUpdate = true;
   }
 
-  function updateShowFlashes(mode, time, delta) {
+  function updateShowFlashes(mode, time, delta, lightsActive) {
     if (!hallMap.strobeLight) return;
 
-    if (!showPlaying || activeMap !== "hall") {
+    if (!lightsActive || !showPlaying || activeMap !== "hall") {
       hallMap.strobeLight.intensity = Math.max(0, hallMap.strobeLight.intensity - delta * 8);
       return;
     }
@@ -1057,12 +1859,11 @@ function clampNumber(value, min, max) {
     if (!fx) return;
 
     const canBurst = showPlaying && activeMap === "hall";
-    if (canBurst) {
-      fx.cooldown -= delta;
-      if (fx.cooldown <= 0) {
+    if (canBurst && pendingFireworkBursts > 0) {
+      const burstCount = pendingFireworkBursts;
+      pendingFireworkBursts = 0;
+      for (let i = 0; i < burstCount; i += 1) {
         spawnFireworkBurst(fx, mode);
-        const baseGap = Math.max(0.15, 1.0 - mode.fireworksRate * 0.82);
-        fx.cooldown = baseGap + Math.random() * 0.4;
       }
     }
 
@@ -1145,6 +1946,7 @@ function clampNumber(value, min, max) {
 
     const delta = clock.getDelta();
     const elapsed = clock.getElapsedTime();
+    refreshPortalState(false);
 
     if (cameraTween) {
       const progress = Math.min((performance.now() - cameraTween.start) / cameraTween.duration, 1);
@@ -1165,7 +1967,7 @@ function clampNumber(value, min, max) {
       hallMap.particles.visible = false;
     } else {
       animateHall(elapsed, delta);
-      hallMap.particles.visible = QUALITY_MODES[qualityMode].particles;
+      hallMap.particles.visible = QUALITY_MODES[qualityMode].particles && fxParticlesEnabled;
     }
     updateDoorVisuals();
     updateRemotePlayers(elapsed, delta);
@@ -1173,9 +1975,7 @@ function clampNumber(value, min, max) {
 
     if (firstPersonEnabled) {
       updateFirstPersonMovement(delta);
-      camera.rotation.order = "YXZ";
-      camera.rotation.y = playerYaw;
-      camera.rotation.x = playerPitch;
+      applyFirstPersonViewRotation();
       syncOrbitTargetToCamera();
     } else {
       controls.update();
@@ -1237,7 +2037,8 @@ function clampNumber(value, min, max) {
     if (firstPersonEnabled) {
       cameraTween = null;
       syncYawPitchFromCamera();
-      camera.position.y = PLAYER_EYE_HEIGHT[activeMap];
+      syncPlayerHeightToGround({ resetVelocity: true });
+      applyFirstPersonViewRotation();
       if (requestLock) {
         tryPointerLock();
       }
@@ -1273,12 +2074,19 @@ function clampNumber(value, min, max) {
     dom.fpsToggleBtn.classList.toggle("active", firstPersonEnabled);
   }
 
-function setMovementKeyState(key, pressed) {
-    if (key === "w" || key === "arrowup") moveState.forward = pressed;
-    if (key === "s" || key === "arrowdown") moveState.backward = pressed;
-    if (key === "a" || key === "arrowleft") moveState.left = pressed;
-    if (key === "d" || key === "arrowright") moveState.right = pressed;
-    if (key === "shift") moveState.run = pressed;
+  function applyFirstPersonViewRotation() {
+    // Clear residual roll from orbit camera to avoid upside-down first-person view.
+    camera.rotation.set(playerPitch, playerYaw, 0, "YXZ");
+    camera.up.set(0, 1, 0);
+  }
+
+function setMovementKeyState(key, code, pressed) {
+    if (key === "w" || key === "arrowup" || code === "keyw") moveState.forward = pressed;
+    if (key === "s" || key === "arrowdown" || code === "keys") moveState.backward = pressed;
+    if (key === "a" || key === "arrowleft" || code === "keya") moveState.left = pressed;
+    if (key === "d" || key === "arrowright" || code === "keyd") moveState.right = pressed;
+    if (key === "shift" || code === "shiftleft" || code === "shiftright") moveState.run = pressed;
+    if (key === " " || key === "space" || key === "spacebar" || code === "space") moveState.jump = pressed;
   }
 
   function updateFirstPersonMovement(delta) {
@@ -1286,23 +2094,54 @@ function setMovementKeyState(key, pressed) {
       return;
     }
 
+    const previousPos = camera.position.clone();
+
     const forwardIntent = (moveState.forward ? 1 : 0) - (moveState.backward ? 1 : 0);
     const strafeIntent = (moveState.right ? 1 : 0) - (moveState.left ? 1 : 0);
-    if (forwardIntent === 0 && strafeIntent === 0) {
-      return;
-    }
-
     const speed = PLAYER_MOVE_SPEED * (moveState.run ? PLAYER_RUN_MULTIPLIER : 1);
-    const forward = new THREE.Vector3(-Math.sin(playerYaw), 0, -Math.cos(playerYaw));
-    const right = new THREE.Vector3(Math.cos(playerYaw), 0, -Math.sin(playerYaw));
-    const movement = new THREE.Vector3();
-    movement.addScaledVector(forward, forwardIntent);
-    movement.addScaledVector(right, strafeIntent);
 
-    if (movement.lengthSq() > 0.0001) {
-      movement.normalize().multiplyScalar(speed * delta);
-      camera.position.add(movement);
+    const nextPos = camera.position.clone();
+    if (forwardIntent !== 0 || strafeIntent !== 0) {
+      const forward = new THREE.Vector3(-Math.sin(playerYaw), 0, -Math.cos(playerYaw));
+      const right = new THREE.Vector3(Math.cos(playerYaw), 0, -Math.sin(playerYaw));
+      const movement = new THREE.Vector3();
+      movement.addScaledVector(forward, forwardIntent);
+      movement.addScaledVector(right, strafeIntent);
+
+      if (movement.lengthSq() > 0.0001) {
+        movement.normalize().multiplyScalar(speed * delta);
+        nextPos.add(movement);
+      }
     }
+
+    if (activeMap === "lobby") {
+      resolveLobbyHorizontalPosition(nextPos);
+    } else {
+      resolveHallHorizontalPosition(nextPos, previousPos);
+    }
+
+    camera.position.x = nextPos.x;
+    camera.position.z = nextPos.z;
+
+    if (moveState.jump && playerGrounded) {
+      playerVelocityY = PLAYER_JUMP_SPEED;
+      playerGrounded = false;
+      moveState.jump = false;
+    }
+
+    playerVelocityY -= PLAYER_GRAVITY * delta;
+    playerFootY += playerVelocityY * delta;
+
+    const groundY = getGroundHeightAt(camera.position.x, camera.position.z, activeMap);
+    if (playerFootY <= groundY) {
+      playerFootY = groundY;
+      playerVelocityY = 0;
+      playerGrounded = true;
+    } else {
+      playerGrounded = false;
+    }
+
+    camera.position.y = playerFootY + PLAYER_EYE_HEIGHT[activeMap];
   }
 
   function syncOrbitTargetToCamera() {
@@ -1334,9 +2173,14 @@ function getLocalPlayerState() {
       ? playerPitch
       : THREE.MathUtils.clamp(Math.asin(clampNumber(cameraDirectionTemp.y, -1, 1)), -1.45, 1.45);
 
+    const eyeHeight = PLAYER_EYE_HEIGHT[activeMap] || 2.2;
+    const syncedEyeY = firstPersonEnabled
+      ? camera.position.y
+      : getGroundHeightAt(camera.position.x, camera.position.z, activeMap) + eyeHeight;
+
     return {
       x: camera.position.x,
-      y: camera.position.y,
+      y: syncedEyeY,
       z: camera.position.z,
       yaw,
       pitch,
@@ -1353,6 +2197,15 @@ function emitLocalPlayerState(force) {
 
     stateSendAccumulator = 0;
     socket.emit("player:state", getLocalPlayerState());
+  }
+
+function updateNetworkNoteStatus() {
+    if (!dom.networkNote) return;
+    const requested = hostMode ? "호스트" : "플레이어";
+    const granted = roomHostId
+      ? (roomHostId === selfSocketId ? "내가 호스트" : "다른 유저가 호스트")
+      : "호스트 없음";
+    dom.networkNote.textContent = `요청 역할: ${requested} | 현재 권한: ${granted} | 룸 ${networkRoomId}`;
   }
 
 function setHostRole(nextHostId) {
@@ -1379,7 +2232,9 @@ function setHostRole(nextHostId) {
 
     updateShowStartButton();
     updateDoorUi();
+    updateFxButtons();
     updateHud();
+    updateNetworkNoteStatus();
   }
 
 function applyRoomSnapshot(snapshot) {
@@ -1406,18 +2261,28 @@ function applyRoomSnapshot(snapshot) {
   }
 
 function upsertRemotePlayer(entry) {
+    const remoteMap = entry.map === "hall" ? "hall" : "lobby";
+    const entryX = Number(entry.x) || 0;
+    const entryZ = Number(entry.z) || 0;
+    const entryY = Number(entry.y);
+    const remoteEyeHeight = PLAYER_EYE_HEIGHT[remoteMap] || 2.2;
+    const groundY = getGroundHeightAt(entryX, entryZ, remoteMap);
+    const footY = Number.isFinite(entryY)
+      ? Math.max(groundY, entryY - remoteEyeHeight)
+      : groundY;
+
     let remote = remotePlayers.get(entry.id);
     if (!remote) {
       const avatar = createPlayerAvatar(entry.name);
-      avatar.position.set(Number(entry.x) || 0, 0, Number(entry.z) || 0);
+      avatar.position.set(entryX, footY, entryZ);
       avatar.rotation.y = Number(entry.yaw) || 0;
       playerLayer.add(avatar);
 
       remote = {
         id: entry.id,
-        map: entry.map === "hall" ? "hall" : "lobby",
+        map: remoteMap,
         mesh: avatar,
-        targetPos: new THREE.Vector3(Number(entry.x) || 0, 0, Number(entry.z) || 0),
+        targetPos: new THREE.Vector3(entryX, footY, entryZ),
         targetYaw: Number(entry.yaw) || 0,
         inActiveMap: false
       };
@@ -1425,8 +2290,8 @@ function upsertRemotePlayer(entry) {
       remotePlayers.set(entry.id, remote);
     }
 
-    remote.map = entry.map === "hall" ? "hall" : "lobby";
-    remote.targetPos.set(Number(entry.x) || 0, 0, Number(entry.z) || 0);
+    remote.map = remoteMap;
+    remote.targetPos.set(entryX, footY, entryZ);
     remote.targetYaw = Number(entry.yaw) || 0;
     remote.mesh.userData.playerName = String(entry.name || remote.mesh.userData.playerName || "\uD50C\uB808\uC774\uC5B4");
   }
@@ -1444,7 +2309,27 @@ function removeRemotePlayerById(playerId) {
 
 function applyShowStateFromNetwork(showState, force) {
     const nextPlaying = Boolean(showState && showState.playing);
-    if (!force && lastNetworkShowPlaying === nextPlaying) {
+    const startedAt = Number((showState && showState.startedAt) || 0);
+    const activeClipId = normalizeClipId(showState && showState.activeClip);
+    const showChanged = lastNetworkShowPlaying !== nextPlaying;
+    const clipChanged = activeClipId > 0 && activeClipId !== lastNetworkActiveClipId;
+
+    if (!force && !showChanged && !clipChanged) {
+      return;
+    }
+
+    if (startedAt > 0) {
+      lastNetworkShowStartedAtMs = startedAt;
+    }
+
+    if (!nextPlaying) {
+      lastNetworkActiveClipId = 0;
+    } else if (activeClipId > 0) {
+      lastNetworkActiveClipId = activeClipId;
+    }
+
+    if (!showChanged && !force && nextPlaying && clipChanged) {
+      applyLatestNetworkClip({ force: true });
       return;
     }
 
@@ -1452,13 +2337,15 @@ function applyShowStateFromNetwork(showState, force) {
 
     if (nextPlaying) {
       showPlaying = true;
+      const offsetSec = getNetworkShowOffsetSeconds();
       if (activeMap === "hall" && stageVideoReady) {
-        startShow({ broadcast: false, allowNonHost: true });
+        startShow({ broadcast: false, allowNonHost: true, startOffsetSeconds: offsetSec });
       } else {
         pendingShowStartFromHost = true;
-        updateQueueUi("\uD638\uC2A4\uD2B8\uAC00 \uACF5\uC5F0\uC744 \uC2DC\uC791\uD588\uC2B5\uB2C8\uB2E4.");
         updateShowStartButton();
       }
+      updateQueueUi("\uD638\uC2A4\uD2B8\uAC00 \uACF5\uC5F0\uC744 \uC2DC\uC791\uD588\uC2B5\uB2C8\uB2E4.");
+      applyLatestNetworkClip({ force: true });
       return;
     }
 
@@ -1480,7 +2367,7 @@ function setupRealtime() {
     socket.on("connect", () => {
       socketConnected = true;
       selfSocketId = socket.id;
-      appendChatLine("\uC2DC\uC2A4\uD15C", "\uC11C\uBC84\uC5D0 \uC5F0\uACB0\uB418\uC5C8\uC2B5\uB2C8\uB2E4.", "system");
+      appendChatLine("시스템", `서버 연결 완료 | 역할 ${hostMode ? "호스트" : "플레이어"} | 룸 ${networkRoomId}`, "system");
       socket.emit("room:join", {
         roomId: networkRoomId,
         name: clientDisplayName,
@@ -1490,6 +2377,7 @@ function setupRealtime() {
       emitLocalPlayerState(true);
       updateShowStartButton();
       updateHud();
+      updateNetworkNoteStatus();
     });
 
     socket.on("disconnect", () => {
@@ -1500,6 +2388,7 @@ function setupRealtime() {
       appendChatLine("\uC2DC\uC2A4\uD15C", "\uC11C\uBC84 \uC5F0\uACB0\uC774 \uB04A\uACBC\uC2B5\uB2C8\uB2E4. \uC7AC\uC5F0\uACB0 \uC911\uC785\uB2C8\uB2E4.", "system");
       updateShowStartButton();
       updateHud();
+      updateNetworkNoteStatus();
     });
 
     socket.on("room:joined", (payload) => {
@@ -1509,7 +2398,15 @@ function setupRealtime() {
       if (payload && payload.showState) {
         applyShowStateFromNetwork(payload.showState, true);
       }
-      appendChatLine("\uC2DC\uC2A4\uD15C", "\uB8F8 \uC785\uC7A5 \uC644\uB8CC: " + (payload && payload.roomId ? payload.roomId : networkRoomId), "system");
+      if (payload && Object.prototype.hasOwnProperty.call(payload, "doorOpen")) {
+        applyDoorStateFromNetwork(payload.doorOpen);
+      }
+      if (payload && payload.fxState) {
+        applyFxState(payload.fxState, { broadcast: false, fromNetwork: true });
+      }
+      const joinedRoomId = payload && payload.roomId ? payload.roomId : networkRoomId;
+      const hostAssigned = payload && payload.hostId ? (payload.hostId === selfSocketId ? "내가 호스트" : "호스트 배정됨") : "호스트 없음";
+      appendChatLine("시스템", `룸 입장 완료: ${joinedRoomId} | ${hostAssigned}`, "system");
     });
 
     socket.on("room:snapshot", (payload) => {
@@ -1519,6 +2416,12 @@ function setupRealtime() {
       applyRoomSnapshot(payload);
       if (payload && payload.showState) {
         applyShowStateFromNetwork(payload.showState, false);
+      }
+      if (payload && Object.prototype.hasOwnProperty.call(payload, "doorOpen")) {
+        applyDoorStateFromNetwork(payload.doorOpen);
+      }
+      if (payload && payload.fxState) {
+        applyFxState(payload.fxState, { broadcast: false, fromNetwork: true });
       }
     });
 
@@ -1538,7 +2441,40 @@ function setupRealtime() {
     });
 
     socket.on("show:state", (payload) => {
-      applyShowStateFromNetwork(payload, true);
+      applyShowStateFromNetwork(payload, false);
+    });
+
+    socket.on("performer:clip", (payload) => {
+      const clipId = normalizeClipId(payload && payload.clipId);
+      if (!clipId) return;
+
+      lastNetworkActiveClipId = clipId;
+      if (showPlaying && activeMap === "hall") {
+        playPerformerClip(clipId, {
+          record: false,
+          broadcast: false,
+          fromNetwork: true,
+          silent: true
+        });
+      } else {
+        currentClipId = clipId;
+        updateClipButtons();
+      }
+    });
+
+    socket.on("door:state", (payload) => {
+      if (payload && Object.prototype.hasOwnProperty.call(payload, "open")) {
+        applyDoorStateFromNetwork(payload.open);
+      }
+    });
+
+    socket.on("fx:state", (payload) => {
+      if (payload && payload.fxState) {
+        applyFxState(payload.fxState, { broadcast: false, fromNetwork: true });
+      }
+      if (payload && payload.burst) {
+        requestFireworkBurst({ broadcast: false, fromNetwork: true });
+      }
     });
 
     socket.on("chat:recv", (payload) => {
@@ -1598,7 +2534,7 @@ function createPlayerAvatar(name) {
     );
     icon.position.set(0, 2.07, 0.06);
 
-    avatar.userData.playerName = String(name || "플레이어");
+    avatar.userData.playerName = String(name || "\uC774\uB984 \uC5C6\uC74C");
     avatar.add(body, head, badge, icon);
     return avatar;
   }
@@ -1661,9 +2597,46 @@ function visibleRemotePlayerCount() {
   }
 
   function getHudStatusText() {
-    const modeText = firstPersonEnabled ? (pointerLocked ? "1\uC778\uCE6D" : "1\uC778\uCE6D \uC900\uBE44") : "\uC2DC\uB124\uB9C8";
-    const mapText = activeMap === "hall" ? "\uACF5\uC5F0\uC7A5" : "\uB85C\uBE44";
-    return `${modeText} | ${mapText} | ${showPlaying ? "\uACF5\uC5F0 \uC911" : "\uB300\uAE30 \uC911"}`;
+    const roleText = isHostClient ? "호스트" : "플레이어";
+    const modeText = firstPersonEnabled ? (pointerLocked ? "1인칭" : "1인칭 준비") : "시네마";
+    const mapText = activeMap === "hall" ? "공연장" : "로비";
+    return `${roleText} | ${modeText} | ${mapText} | ${showPlaying ? "공연 중" : "대기 중"}`;
+  }
+
+function setupNetworkProfileUi() {
+    if (!dom.networkRoleSelect || !dom.networkRoomInput || !dom.networkNameInput || !dom.networkApplyBtn) {
+      return;
+    }
+
+    dom.networkRoleSelect.value = hostMode ? "host" : "player";
+    dom.networkRoomInput.value = networkRoomId;
+    dom.networkNameInput.value = requestedPlayerName;
+
+    updateNetworkNoteStatus();
+
+    dom.networkApplyBtn.addEventListener("click", () => {
+      const nextHostMode = String(dom.networkRoleSelect.value || "host").trim().toLowerCase() !== "player";
+      const nextRoomId = String(dom.networkRoomInput.value || "main")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "")
+        .slice(0, 32) || "main";
+      const nextName = String(dom.networkNameInput.value || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 24);
+
+      const nextQuery = new URLSearchParams(window.location.search);
+      nextQuery.set("host", nextHostMode ? "1" : "0");
+      nextQuery.set("room", nextRoomId);
+      if (nextName) {
+        nextQuery.set("name", nextName);
+      } else {
+        nextQuery.delete("name");
+      }
+
+      window.location.search = nextQuery.toString();
+    });
   }
 
 function setupChatUi() {
@@ -1731,7 +2704,7 @@ function sanitizeChatText(input) {
   }
 
 function appendChatLine(name, text, type) {
-    if (!dom.chatLog) return;
+    if (!chatEnabled || !dom.chatLog) return;
 
     const line = document.createElement("p");
     line.className = "chat-line";
@@ -1818,7 +2791,7 @@ function createLobbyMap(THREERef, targetScene, mobile) {
       corridorStrips.push(strip);
     }
 
-    // 로비의 넓은 면(z=3 경계)에 공연장 연결문 배치
+    // Place hall connection doors on the lobby wide-side boundary (z=3).
     const doorZ = 22.65;
     const doorFrameMat = new THREERef.MeshStandardMaterial({ color: 0x1d273b, roughness: 0.64, metalness: 0.32 });
     const doorFrameLeft = new THREERef.Mesh(new THREERef.BoxGeometry(2.1, 8, 0.7), wallMat);
@@ -2001,11 +2974,13 @@ function createLobbyMap(THREERef, targetScene, mobile) {
 
     const screenMat = new THREERef.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5, roughness: 0.4 });
     const screen = new THREERef.Mesh(new THREERef.PlaneGeometry(stageWidth, 18), screenMat);
-    screen.position.set(0, stageHeight + 9, -72);
+    screen.position.set(0, stageHeight + 11.2, -86);
     group.add(screen);
 
     const seatTemplate = buildSeatTemplate(THREERef);
     const facingTarget = new THREERef.Vector3(0, 1.1, -58);
+    const seatColliders = [];
+    const seatWorldPosition = new THREERef.Vector3();
 
     for (let row = 0; row < rows; row += 1) {
       for (let col = 0; col < cols; col += 1) {
@@ -2018,6 +2993,13 @@ function createLobbyMap(THREERef, targetScene, mobile) {
         seat.position.set(x, 0, z);
         seat.lookAt(facingTarget);
         seatingGroup.add(seat);
+        seat.updateMatrixWorld(true);
+        seat.getWorldPosition(seatWorldPosition);
+        seatColliders.push({
+          x: Math.round(seatWorldPosition.x * 1000) / 1000,
+          z: Math.round(seatWorldPosition.z * 1000) / 1000,
+          radius: 0.56
+        });
       }
     }
 
@@ -2087,7 +3069,7 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     group.add(particles);
 
     targetScene.add(group);
-    return { group, seatingGroup, stageWash, movingLights, particles, particleCount, particleVelocities, fireworks, strobeLight, screenMat, edgeMat, performerMat, performerPlane };
+    return { group, seatingGroup, seatColliders, stageWash, movingLights, particles, particleCount, particleVelocities, fireworks, strobeLight, screenMat, edgeMat, performerMat, performerPlane };
   }
 
   function createFireworkSystem(THREERef, mobile) {
@@ -2233,10 +3215,4 @@ function createLobbyMap(THREERef, targetScene, mobile) {
 
     return seat;
   }
-})()
-
-
-
-
-
-
+})();
