@@ -6,7 +6,7 @@
     name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
   />
-  <title>NEXA HALL 50</title>
+  <title>NEXA LIVE LOBBY</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
   <link rel="stylesheet" href="./style.css" />
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -20,38 +20,79 @@
   <main id="app">
     <aside id="overlay">
       <section class="panel panel-intro">
-        <h1><span class="live-badge">LIVE</span> NEXA HALL 50</h1>
-        <p>
-          최대 50명 수용 기준의 3D 온라인 공연장입니다.<br />
-          마우스 드래그로 시점을 돌리고, 휠로 확대/축소하세요.
+        <h1><span class="live-badge">LIVE</span> NEXA LIVE LOBBY</h1>
+        <p id="status-intent">
+          확장된 로비에서 복도 문을 지나 공연장으로 바로 이어집니다.
         </p>
         <div class="stat-grid">
           <div class="stat-card">
-            <span class="stat-label">최대 수용</span>
-            <strong id="stat-capacity">50명</strong>
+            <span class="stat-label">공연장 수용</span>
+            <strong id="stat-capacity">50</strong>
           </div>
           <div class="stat-card">
             <span class="stat-label">좌석 배치</span>
-            <strong id="stat-layout">5열 x 10석</strong>
+            <strong id="stat-layout">5 x 10</strong>
           </div>
           <div class="stat-card">
-            <span class="stat-label">현재 좌석</span>
-            <strong id="stat-seats">0석</strong>
+            <span class="stat-label">활성 좌석</span>
+            <strong id="stat-seats">0</strong>
           </div>
         </div>
       </section>
+
       <section class="panel panel-controls">
         <h2>카메라 프리셋</h2>
         <div class="preset-grid">
-          <button type="button" data-preset="wide">홀 전체</button>
-          <button type="button" data-preset="stage">무대 클로즈</button>
-          <button type="button" data-preset="audience">객석 중심</button>
+          <button type="button" data-map-scope="lobby" data-preset="lobby_entry">로비 입구</button>
+          <button type="button" data-map-scope="lobby" data-preset="lobby_corridor">복도 시점</button>
+          <button type="button" data-map-scope="hall" data-preset="hall_wide">홀 전체</button>
+          <button type="button" data-map-scope="hall" data-preset="hall_stage">무대 클로즈</button>
+          <button type="button" data-map-scope="hall" data-preset="hall_audience">객석 중심</button>
         </div>
+
+        <div class="ops-stack">
+          <div class="ops-row">
+            <span class="ops-label">공연 모드</span>
+            <div class="mode-grid">
+              <button type="button" data-show-mode="rehearsal">리허설</button>
+              <button type="button" data-show-mode="live">라이브</button>
+              <button type="button" data-show-mode="finale">피날레</button>
+            </div>
+          </div>
+
+          <div class="ops-row">
+            <label class="ops-label" for="occupancy-range">관객 수</label>
+            <input id="occupancy-range" type="range" min="0" max="50" step="1" value="50" />
+            <p id="occupancy-label" class="ops-value">50 / 50</p>
+          </div>
+
+          <div class="ops-row">
+            <label class="ops-label" for="quality-select">렌더 품질</label>
+            <select id="quality-select" class="quality-select">
+              <option value="low">낮음</option>
+              <option value="medium" selected>보통</option>
+              <option value="high">높음</option>
+            </select>
+          </div>
+        </div>
+
+        <button id="portal-action-btn" class="accent-btn" type="button">공연장 입장 (E)</button>
+        <button id="host-door-btn" class="ghost-btn" type="button">호스트 문 닫기</button>
+        <button id="return-lobby-btn" class="ghost-btn hidden" type="button">로비로 돌아가기</button>
       </section>
     </aside>
 
-    <div id="loading" aria-live="polite">공연장 준비 중...</div>
-    <div id="canvas-root" aria-label="3D 공연장 뷰"></div>
+    <aside id="hud" aria-live="polite">
+      <div class="hud-chip"><span>MAP</span><strong id="hud-map">LOBBY</strong></div>
+      <div class="hud-chip"><span>FPS</span><strong id="hud-fps">0</strong></div>
+      <div class="hud-chip"><span>SEATS</span><strong id="hud-seats">0 / 50</strong></div>
+      <div class="hud-chip"><span>QUALITY</span><strong id="hud-quality">MEDIUM</strong></div>
+      <div class="hud-chip"><span>DOOR</span><strong id="hud-portal">OPEN</strong></div>
+      <div class="hud-chip"><span>DRAWS</span><strong id="hud-drawcalls">0</strong></div>
+    </aside>
+
+    <div id="loading" aria-live="polite">로비 구성 중...</div>
+    <div id="canvas-root" aria-label="3D stage viewport"></div>
   </main>
 </body>
 </html>
