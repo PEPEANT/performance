@@ -244,7 +244,7 @@
   let lastNetworkShowPlaying = null;
   let lastNetworkShowStartedAtMs = 0;
   let lastNetworkActiveClipId = 0;
-  let clientDisplayName = requestedPlayerName || ("player-" + Math.floor(Math.random() * 9000 + 1000));
+  let clientDisplayName = requestedPlayerName || ("\uD50C\uB808\uC774\uC5B4-" + Math.floor(Math.random() * 9000 + 1000));
 
   dom.portalActionBtn.addEventListener("click", () => enterHall());
   if (dom.showStartBtn) {
@@ -376,7 +376,7 @@
   if (dom.queueLoopBtn) {
     dom.queueLoopBtn.addEventListener("click", () => {
       if (!canControlShowOps()) {
-        updateQueueUi("?紐꾨뮞???袁⑹뒠 疫꿸퀡???낅빍??");
+        updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
         return;
       }
       queueLoop = !queueLoop;
@@ -499,24 +499,24 @@
   function enterHall() {
     if (activeMap !== "lobby" || transitionInFlight) return;
     if (!doorOpen) {
-      dom.loading.textContent = "?얜챷????? ??됰뮸??덈뼄. ?紐꾨뮞?硫? ?얜챷????곷선????놁삢??????됰뮸??덈뼄.";
+      dom.loading.textContent = "\uBB38\uC774 \uB2EB\uD600 \uC788\uC2B5\uB2C8\uB2E4. \uD638\uC2A4\uD2B8\uAC00 \uBB38\uC744 \uC5F4\uC5B4\uC57C \uC785\uC7A5\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
       dom.loading.classList.remove("hidden");
       setTimeout(() => {
         if (!transitionInFlight) {
           dom.loading.classList.add("hidden");
-          dom.loading.textContent = "嚥≪뮆???닌딄쉐 餓?..";
+          dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
         }
       }, 900);
       return;
     }
     transitionInFlight = true;
-    dom.loading.textContent = "??源????궢 餓?..";
+    dom.loading.textContent = "\uD3EC\uD0C8 \uD1B5\uACFC \uC911...";
     dom.loading.classList.remove("hidden");
     setTimeout(() => {
       setMap("hall", true);
       setTimeout(() => {
         dom.loading.classList.add("hidden");
-        dom.loading.textContent = "嚥≪뮆???닌딄쉐 餓?..";
+        dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
         transitionInFlight = false;
       }, 220);
     }, 420);
@@ -531,7 +531,7 @@
     doorOpen = next;
     doorTarget = doorOpen ? 1 : 0;
     if (dom.hostDoorBtn && isHostClient) {
-      dom.hostDoorBtn.textContent = doorOpen ? "?紐꾨뮞??????る┛" : "?紐꾨뮞??????용┛";
+      dom.hostDoorBtn.textContent = doorOpen ? "\uD638\uC2A4\uD2B8 \uBB38 \uB2EB\uAE30" : "\uD638\uC2A4\uD2B8 \uBB38 \uC5F4\uAE30";
     }
     if (broadcast && socketConnected && socket && isHostClient) {
       socket.emit("door:set", { open: doorOpen, ts: Date.now() });
@@ -697,7 +697,7 @@ function applyQuality() {
       stageVideoReady = false;
       updateShowStartButton();
       const bgSrc = SHOW_VIDEO_PATH;
-      updateQueueUi(`獄쏄퀗瑗??怨멸맒 嚥≪뮆諭???쎈솭: ${bgSrc}`);
+      updateQueueUi(`\uBC30\uACBD \uC601\uC0C1 \uB85C\uB4DC \uC2E4\uD328: ${bgSrc}`);
       appendChatLine("시스템", `배경 영상 로드 실패: ${bgSrc}`, "system");
     });
 
@@ -730,7 +730,7 @@ function applyQuality() {
     chroma.addEventListener("error", () => {
       chromaVideoReady = false;
       const failedClipPath = String(chroma.getAttribute("src") || CLIP_VIDEO_PATHS[DEFAULT_CLIP_ID]);
-      updateQueueUi(`??노７??????嚥≪뮆諭???쎈솭: ${failedClipPath}`);
+      updateQueueUi(`\uD37C\uD3EC\uBA38 \uD074\uB9BD \uB85C\uB4DC \uC2E4\uD328: ${failedClipPath}`);
       appendChatLine("시스템", `퍼포머 클립 로드 실패: ${failedClipPath}`, "system");
     });
 
@@ -994,7 +994,7 @@ function toggleQueueRecording() {
     }
 
     if (!canControlShowOps()) {
-      updateQueueUi("?紐꾨뮞???袁⑹뒠 疫꿸퀡???낅빍??");
+      updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
       return;
     }
 
@@ -1018,7 +1018,7 @@ function startQueuePlayback(resetSong) {
       return;
     }
     if (!canControlShowOps()) {
-      updateQueueUi("?紐꾨뮞???袁⑹뒠 疫꿸퀡???낅빍??");
+      updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
       return;
     }
     if (queueEvents.length === 0) {
@@ -1056,7 +1056,7 @@ function processQueuePlayback() {
 
 function saveQueueToStorage() {
     if (!canControlShowOps()) {
-      updateQueueUi("?紐꾨뮞???袁⑹뒠 疫꿸퀡???낅빍??");
+      updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
       return;
     }
     try {
@@ -1108,7 +1108,7 @@ function loadQueueFromStorage(silent) {
 
 function clearQueueEvents() {
     if (!canControlShowOps()) {
-      updateQueueUi("?紐꾨뮞???袁⑹뒠 疫꿸퀡???낅빍??");
+      updateQueueUi("\uD638\uC2A4\uD2B8 \uC804\uC6A9 \uAE30\uB2A5\uC785\uB2C8\uB2E4.");
       return;
     }
     queueRecording = false;
@@ -2090,7 +2090,7 @@ function createPlayerAvatar(name) {
     );
     icon.position.set(0, 2.07, 0.06);
 
-    avatar.userData.playerName = String(name || "???쟿??곷선");
+    avatar.userData.playerName = String(name || "\uC774\uB984 \uC5C6\uC74C");
     avatar.add(body, head, badge, icon);
     return avatar;
   }
@@ -2349,7 +2349,7 @@ function createLobbyMap(THREERef, targetScene, mobile) {
       corridorStrips.push(strip);
     }
 
-    // 嚥≪뮆????蹂? 筌?z=3 野껋럡?????⑤벊肉???怨뚭퍙??獄쏄퀣??
+    // Place hall connection doors on the lobby wide-side boundary (z=3).
     const doorZ = 22.65;
     const doorFrameMat = new THREERef.MeshStandardMaterial({ color: 0x1d273b, roughness: 0.64, metalness: 0.32 });
     const doorFrameLeft = new THREERef.Mesh(new THREERef.BoxGeometry(2.1, 8, 0.7), wallMat);

@@ -21,7 +21,7 @@
   <main id="app">
     <aside id="overlay">
       <section class="panel panel-intro">
-        <h1><span class="live-badge">LIVE</span> NEXA 라이브 로비</h1>
+        <h1><span class="live-badge">실시간</span> NEXA 라이브 로비</h1>
         <p id="status-intent">
           로비에서 복도를 지나 공연장으로 이동하세요.
         </p>
@@ -82,7 +82,7 @@
           <div class="network-grid">
             <label class="ops-label" for="network-role-select">역할</label>
             <select id="network-role-select" class="quality-select">
-              <option value="host">호스트(관전자)</option>
+              <option value="host">호스트(관리자)</option>
               <option value="player">플레이어(1인칭)</option>
             </select>
 
@@ -106,7 +106,7 @@
               placeholder="플레이어 이름"
             />
           </div>
-          <button id="network-apply-btn" class="ghost-btn" type="button">역할 적용 후 재접속</button>
+          <button id="network-apply-btn" class="ghost-btn" type="button">역할 적용 및 재접속</button>
           <p id="network-note" class="ops-value">현재 설정 확인 중...</p>
         </div>
 
@@ -134,12 +134,12 @@
           <div class="queue-grid">
             <button id="queue-record-btn" type="button">큐 녹화 시작</button>
             <button id="queue-play-btn" type="button">큐 재생</button>
-            <button id="queue-loop-btn" type="button">루프 켜짐</button>
+            <button id="queue-loop-btn" type="button">루프 켜기</button>
             <button id="queue-save-btn" type="button">큐 저장</button>
             <button id="queue-load-btn" type="button">큐 불러오기</button>
             <button id="queue-clear-btn" type="button">큐 초기화</button>
           </div>
-          <p id="queue-status" class="ops-value">큐 대기 | 이벤트 0개 | 재생 정지</p>
+          <p id="queue-status" class="ops-value">대기 | 이벤트 0개 | 재생 정지</p>
         </div>
       </section>
     </aside>
@@ -153,7 +153,7 @@
       <div class="hud-chip"><span>드로우콜</span><strong id="hud-drawcalls">0</strong></div>
     </aside>
 
-    <div id="hud-ui" aria-label="플레이 상태">
+    <div id="hud-ui" aria-label="플레이어 상태">
       <div class="hud-row" id="hud-row-status">
         <span class="hud-key">상태</span>
         <span id="hud-status">오프라인</span>
