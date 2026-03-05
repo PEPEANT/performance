@@ -1459,17 +1459,19 @@
     if (!shouldAutoEnterHallFromLobby()) {
       return;
     }
+    const prevYaw = playerYaw;
+    const prevPitch = playerPitch;
     transitionInFlight = true;
-    setMap("hall", true);
+    setMap("hall", false, { preserveView: true });
 
     const nextX = clampNumber(camera.position.x * 1.05, -6.5, 6.5);
     const eyeY = PLAYER_EYE_HEIGHT.hall;
     camera.position.set(nextX, eyeY, 38.9);
-    controls.target.set(nextX, 2.4, 52.0);
-    controls.update();
 
-    syncYawPitchFromCamera();
+    playerYaw = prevYaw;
+    playerPitch = prevPitch;
     syncPlayerHeightToGround({ resetVelocity: true });
+    applyFirstPersonViewRotation();
     syncOrbitTargetToCamera();
     emitLocalPlayerState(true);
 
@@ -1488,17 +1490,19 @@
       return;
     }
 
+    const prevYaw = playerYaw;
+    const prevPitch = playerPitch;
     transitionInFlight = true;
-    setMap("lobby", true);
+    setMap("lobby", false, { preserveView: true });
 
     const nextX = clampNumber(camera.position.x * 0.85, -3.2, 3.2);
     const eyeY = PLAYER_EYE_HEIGHT.lobby;
     camera.position.set(nextX, eyeY, 35.0);
-    controls.target.set(nextX, 2.4, 24.8);
-    controls.update();
 
-    syncYawPitchFromCamera();
+    playerYaw = prevYaw;
+    playerPitch = prevPitch;
     syncPlayerHeightToGround({ resetVelocity: true });
+    applyFirstPersonViewRotation();
     syncOrbitTargetToCamera();
     emitLocalPlayerState(true);
 
@@ -1545,7 +1549,8 @@
     updateHud();
   }
 
-  function setMap(nextMap, immediate) {
+  function setMap(nextMap, immediate, options = {}) {
+    const { preserveView = false } = options;
     activeMap = nextMap === "hall" ? "hall" : "lobby";
     // Keep lobby <-> corridor <-> hall continuously visible from both sides.
     lobbyMap.group.visible = true;
@@ -1555,7 +1560,12 @@
     controls.maxDistance = activeMap === "hall" ? 95 : 40;
 
     const defaultPreset = activeMap === "hall" ? "hall_wide" : "lobby_entry";
-    applyPreset(defaultPreset, immediate);
+    if (preserveView) {
+      cameraTween = null;
+      activePreset = defaultPreset;
+    } else {
+      applyPreset(defaultPreset, immediate);
+    }
     syncShowMediaState();
     updateShowStartButton();
     updateUiByMap();
