@@ -222,6 +222,8 @@
   const REMOTE_BADGE_DISTANCE_SQ = 45 * 45;
   const PLAYER_STATE_SEND_INTERVAL = 1 / 15;
   const REMOTE_INTERPOLATION_SPEED = 8;
+  const STAGE_VIDEO_STALL_DETECTION_SECONDS = 2.4;
+  const STAGE_VIDEO_STALL_RECOVERY_COOLDOWN_SECONDS = 3.5;
   const PLAYER_GRAVITY = 24;
   const PLAYER_JUMP_SPEED = 9.2;
   const PLAYER_COLLISION_RADIUS = 0.42;
@@ -326,6 +328,9 @@
   let activeShowVideoPath = SHOW_VIDEO_PATH;
   let showVideoMobileFallbackTried = false;
   let stageVideoAwaitingUnmuteGesture = false;
+  let stageVideoLastTime = 0;
+  let stageVideoLastAdvanceAt = 0;
+  let stageVideoLastRecoveryAt = 0;
   let chromaVideo = null;
   let chromaVideoTexture = null;
   let chromaVideoReady = false;
@@ -1750,7 +1755,8 @@ function applyQuality() {
   function setupShowMedia() {
     const bg = document.createElement("video");
     bg.src = activeShowVideoPath;
-    bg.preload = shouldPreferMobileShowVideo ? "metadata" : "auto";
+    // Keep an ahead buffer on mobile to prevent long-track stalls around mid-playback.
+    bg.preload = "auto";
     bg.loop = false;
     bg.muted = false;
     bg.volume = 1.0;
@@ -1768,6 +1774,7 @@ function applyQuality() {
         stageVideoTexture.generateMipmaps = false;
         stageVideoTexture.encoding = THREE.sRGBEncoding;
         stageVideoReady = true;
+        resetStageVideoWatchdog(0);
         updateShowStartButton();
 
         if (pendingShowStartFromHost && showPlaying && activeMap === "hall") {
@@ -1776,6 +1783,22 @@ function applyQuality() {
       },
       { once: true }
     );
+
+    bg.addEventListener("timeupdate", () => {
+      noteStageVideoProgress();
+    });
+    bg.addEventListener("playing", () => {
+      noteStageVideoProgress();
+    });
+    bg.addEventListener("seeked", () => {
+      noteStageVideoProgress();
+    });
+    bg.addEventListener("waiting", () => {
+      recoverStageVideoPlayback("waiting");
+    });
+    bg.addEventListener("stalled", () => {
+      recoverStageVideoPlayback("stalled");
+    });
 
     bg.addEventListener("ended", () => {
       if (queuePlaying && queueLoop && queueEvents.length > 0) {
@@ -1878,6 +1901,7 @@ function applyQuality() {
       stageVideo.pause();
       stageVideo.currentTime = 0;
     }
+    resetStageVideoWatchdog(0);
     if (chromaVideo) {
       chromaVideo.pause();
       chromaVideo.currentTime = 0;
@@ -1947,6 +1971,7 @@ function applyQuality() {
     } else {
       stageVideo.currentTime = offsetSec;
     }
+    resetStageVideoWatchdog(stageVideo.currentTime);
     stageVideo.muted = false;
     stageVideo.defaultMuted = false;
     stageVideo.volume = 1.0;
@@ -2013,6 +2038,7 @@ function applyQuality() {
       if (stageVideo) {
         stageVideo.pause();
       }
+      resetStageVideoWatchdog(stageVideo ? stageVideo.currentTime : 0);
       if (chromaVideo) {
         chromaVideo.pause();
       }
@@ -2029,6 +2055,7 @@ function applyQuality() {
       if (stageVideo) {
         stageVideo.pause();
       }
+      resetStageVideoWatchdog(stageVideo ? stageVideo.currentTime : 0);
       updateQueueUi();
       return;
     }
@@ -2038,6 +2065,87 @@ function applyQuality() {
       if (stagePlay && typeof stagePlay.catch === "function") {
         stagePlay.catch(() => {});
       }
+      noteStageVideoProgress();
+    }
+  }
+
+  function resetStageVideoWatchdog(nextTime = 0) {
+    const nowSeconds = performance.now() / 1000;
+    stageVideoLastTime = Math.max(0, Number(nextTime) || 0);
+    stageVideoLastAdvanceAt = nowSeconds;
+    stageVideoLastRecoveryAt = 0;
+  }
+
+  function noteStageVideoProgress() {
+    if (!stageVideo) return;
+    const currentTime = Number(stageVideo.currentTime);
+    if (!Number.isFinite(currentTime)) return;
+    stageVideoLastTime = Math.max(0, currentTime);
+    stageVideoLastAdvanceAt = performance.now() / 1000;
+  }
+
+  function recoverStageVideoPlayback(_reason = "watchdog") {
+    if (!showPlaying || activeMap !== "hall" || !stageVideo || !stageVideoReady || stageVideo.ended) {
+      return;
+    }
+
+    const nowSeconds = performance.now() / 1000;
+    if (nowSeconds - stageVideoLastRecoveryAt < STAGE_VIDEO_STALL_RECOVERY_COOLDOWN_SECONDS) {
+      return;
+    }
+    stageVideoLastRecoveryAt = nowSeconds;
+
+    const rawCurrentTime = Number(stageVideo.currentTime);
+    const safeCurrentTime = Number.isFinite(rawCurrentTime) ? Math.max(0, rawCurrentTime) : 0;
+    const nudgeTarget = Number.isFinite(stageVideo.duration) && stageVideo.duration > 0
+      ? clampNumber(safeCurrentTime - 0.03, 0, Math.max(0, stageVideo.duration - 0.05))
+      : Math.max(0, safeCurrentTime - 0.03);
+
+    try {
+      stageVideo.currentTime = nudgeTarget;
+    } catch (_error) {
+      // ignore seek issues from browsers with strict buffering states
+    }
+
+    const resumePlay = stageVideo.play();
+    if (resumePlay && typeof resumePlay.catch === "function") {
+      resumePlay.catch(() => {});
+    }
+
+    stageVideoLastAdvanceAt = nowSeconds;
+  }
+
+  function monitorStageVideoPlayback() {
+    if (
+      !showPlaying ||
+      activeMap !== "hall" ||
+      !stageVideo ||
+      !stageVideoReady ||
+      stageVideo.paused ||
+      stageVideo.ended
+    ) {
+      return;
+    }
+
+    const nowSeconds = performance.now() / 1000;
+    const currentTime = Number(stageVideo.currentTime);
+    if (!Number.isFinite(currentTime)) {
+      return;
+    }
+
+    if (currentTime > stageVideoLastTime + 0.04) {
+      stageVideoLastTime = currentTime;
+      stageVideoLastAdvanceAt = nowSeconds;
+      return;
+    }
+
+    if (!stageVideoLastAdvanceAt) {
+      stageVideoLastAdvanceAt = nowSeconds;
+      return;
+    }
+
+    if (nowSeconds - stageVideoLastAdvanceAt >= STAGE_VIDEO_STALL_DETECTION_SECONDS) {
+      recoverStageVideoPlayback("watchdog");
     }
   }
 
@@ -3068,6 +3176,7 @@ function clampNumber(value, min, max) {
     updateRemotePlayers(elapsed, delta);
     processQueuePlayback();
     updatePerformerRuntime(elapsed);
+    monitorStageVideoPlayback();
 
     if (firstPersonEnabled) {
       updateFirstPersonMovement(delta);
