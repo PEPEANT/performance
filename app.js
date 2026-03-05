@@ -100,6 +100,7 @@
   const externalReturnUrlRaw = String(query.get("returnUrl") || "").trim();
   const returnPortalHint = String(query.get("returnPortal") || "").trim().toLowerCase();
   const portalExitUrlRaw = String(query.get("portalLink") || query.get("portalUrl") || "").trim();
+  const DEFAULT_PORTAL_EXIT_URL = "https://emptines-chat-2.onrender.com/?zone=lobby&returnPortal=hall&from=performance";
   const PLAYER_NAME_STORAGE_KEY = "performance_player_name_v1";
   const PORTAL_EXIT_URL_STORAGE_KEY = "performance_portal_exit_url_v1";
 
@@ -913,7 +914,7 @@
   }
 
   function initializePortalExitUrl() {
-    const explicitPortal = resolveExternalUrl(portalExitUrlRaw);
+    const explicitPortal = resolveExternalUrl(portalExitUrlRaw) || resolveExternalUrl(externalReturnUrlRaw);
     if (explicitPortal) {
       portalExitUrl = explicitPortal;
       try {
@@ -921,22 +922,13 @@
       } catch (_error) {}
       return;
     }
-
-    try {
-      const stored = resolveExternalUrl(window.localStorage.getItem(PORTAL_EXIT_URL_STORAGE_KEY) || "");
-      if (stored) {
-        portalExitUrl = stored;
-        return;
-      }
-    } catch (_error) {}
-
-    portalExitUrl = resolveExternalUrl(externalReturnUrlRaw);
+    portalExitUrl = DEFAULT_PORTAL_EXIT_URL;
   }
 
   function buildPortalExitUrl() {
     const explicit = resolveExternalUrl(portalExitUrl);
     if (explicit) return explicit;
-    return buildLobbyReturnUrl();
+    return DEFAULT_PORTAL_EXIT_URL;
   }
 
   function persistPlayerName(name) {
