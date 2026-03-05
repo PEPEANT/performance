@@ -50,39 +50,46 @@
           <button id="host-door-btn" class="ghost-btn" type="button">호스트 문 닫기</button>
 
           <div class="clip-panel">
-            <h3>안무 클립 (1~10)</h3>
-            <div id="clip-grid" class="clip-grid">
-              <button type="button" data-clip-id="1">1</button>
-              <button type="button" data-clip-id="2">2</button>
-              <button type="button" data-clip-id="3">3</button>
-              <button type="button" data-clip-id="4">4</button>
-              <button type="button" data-clip-id="5">5</button>
-              <button type="button" data-clip-id="6">6</button>
-              <button type="button" data-clip-id="7">7</button>
-              <button type="button" data-clip-id="8">8</button>
-              <button type="button" data-clip-id="9">9</button>
-              <button type="button" data-clip-id="10">10</button>
-            </div>
-
-            <div class="clip-special-grid">
-              <button type="button" data-performer-action="walk_in">0-0 입장 워킹</button>
-              <button type="button" data-performer-action="idle_hold">0-1 제자리 정지</button>
-              <button type="button" data-performer-action="greet">0-1 인사 (3~10s)</button>
-              <button type="button" data-performer-action="walk_out">0-0 퇴장 워킹(반전)</button>
-            </div>
-
+            <h3 id="queue-panel-title">Queue Control</h3>
             <div class="queue-grid">
-              <button id="queue-record-btn" type="button">큐 녹화 시작</button>
-              <button id="queue-play-btn" type="button">큐 재생</button>
-              <button id="queue-loop-btn" type="button">루프 켜기</button>
-              <button id="queue-save-btn" type="button">큐 저장</button>
-              <button id="queue-load-btn" type="button">큐 불러오기</button>
-              <button id="queue-clear-btn" type="button">큐 초기화</button>
+              <button id="queue-record-btn" type="button">Queue Record</button>
+              <button id="queue-play-btn" type="button">Queue Play</button>
+              <button id="queue-loop-btn" type="button">Loop On</button>
+              <button id="queue-save-btn" type="button">Queue Save</button>
+              <button id="queue-load-btn" type="button">Queue Load</button>
+              <button id="queue-clear-btn" type="button">Queue Clear</button>
             </div>
-            <p id="queue-status" class="ops-value">대기 | 이벤트 0개 | 재생 정지</p>
+            <p id="queue-status" class="ops-value">Standby | Events 0 | Playback Idle</p>
           </div>
         </details>
 
+        <details class="host-section" id="host-section-choreo" open>
+          <summary id="host-section-choreo-summary">Choreo Clips</summary>
+          <div class="clip-panel">
+            <h3 id="choreo-panel-title">Choreo Clips (1~11)</h3>
+            <div id="clip-grid" class="clip-grid clip-grid-named">
+              <button type="button" data-clip-id="1"><span class="clip-number">1.</span><span class="clip-name" data-clip-label="1">-</span></button>
+              <button type="button" data-clip-id="2"><span class="clip-number">2.</span><span class="clip-name" data-clip-label="2">-</span></button>
+              <button type="button" data-clip-id="3"><span class="clip-number">3.</span><span class="clip-name" data-clip-label="3">-</span></button>
+              <button type="button" data-clip-id="4"><span class="clip-number">4.</span><span class="clip-name" data-clip-label="4">-</span></button>
+              <button type="button" data-clip-id="5"><span class="clip-number">5.</span><span class="clip-name" data-clip-label="5">-</span></button>
+              <button type="button" data-clip-id="6"><span class="clip-number">6.</span><span class="clip-name" data-clip-label="6">-</span></button>
+              <button type="button" data-clip-id="7"><span class="clip-number">7.</span><span class="clip-name" data-clip-label="7">-</span></button>
+              <button type="button" data-clip-id="8"><span class="clip-number">8.</span><span class="clip-name" data-clip-label="8">-</span></button>
+              <button type="button" data-clip-id="9"><span class="clip-number">9.</span><span class="clip-name" data-clip-label="9">-</span></button>
+              <button type="button" data-clip-id="10"><span class="clip-number">10.</span><span class="clip-name" data-clip-label="10">-</span></button>
+              <button type="button" data-clip-id="11"><span class="clip-number">11.</span><span class="clip-name" data-clip-label="11">-</span></button>
+            </div>
+
+            <h3 id="special-action-title">0-0 / 0-1 Special</h3>
+            <div class="clip-special-grid">
+              <button type="button" data-performer-action="walk_in">0-0 Walk In</button>
+              <button type="button" data-performer-action="idle_hold">0-1 Idle Hold</button>
+              <button type="button" data-performer-action="greet">0-1 Greet (3~10s)</button>
+              <button type="button" data-performer-action="walk_out">0-0 Walk Out</button>
+            </div>
+          </div>
+        </details>
         <details class="host-section" id="host-section-network" open>
           <summary>네트워크</summary>
           <button id="network-panel-toggle-btn" class="ghost-btn network-toggle-btn" type="button" aria-expanded="false" aria-controls="network-panel">

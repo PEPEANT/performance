@@ -385,6 +385,35 @@ p {
   gap: 6px;
 }
 
+.clip-grid-named {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.clip-grid-named button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  text-align: left;
+  padding: 8px 9px;
+}
+
+.clip-number {
+  color: #9ac4e8;
+  font-size: 0.73rem;
+  font-weight: 800;
+  min-width: 1.7em;
+}
+
+.clip-name {
+  font-size: 0.72rem;
+  font-weight: 720;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .clip-special-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -592,6 +621,10 @@ p {
 
   .panel-controls {
     animation-delay: 0ms;
+  }
+
+  .clip-grid-named {
+    grid-template-columns: 1fr;
   }
 
   #hud {

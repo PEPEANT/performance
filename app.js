@@ -4,7 +4,7 @@
   const COLS = 10;
   const SHOW_VIDEO_PATH_DESKTOP = "./01.mp4";
   const SHOW_VIDEO_PATH_MOBILE = "./01.mobile.mp4";
-  const CLIP_IDS = Array.from({ length: 10 }, (_, index) => index + 1);
+  const CLIP_IDS = Array.from({ length: 11 }, (_, index) => index + 1);
   const CLIP_VIDEO_PATHS = Object.fromEntries(CLIP_IDS.map((id) => [id, `./WEBM/${id}_alpha.webm`]));
   const DEFAULT_CLIP_ID = 1;
   const DEFAULT_PERFORMER_ACTION_ID = `clip:${DEFAULT_CLIP_ID}`;
@@ -17,6 +17,8 @@
       moveFromX: PERFORMER_LEFT_ENTRY_X,
       moveToX: PERFORMER_BASE_POSITION.x,
       moveDuration: 8.4,
+      loop: true,
+      stopLoopAtMoveEnd: true,
       mirrorX: false
     },
     idle_hold: {
@@ -38,17 +40,32 @@
       moveFromX: PERFORMER_BASE_POSITION.x,
       moveToX: PERFORMER_LEFT_ENTRY_X,
       moveDuration: 8.4,
+      loop: true,
+      stopLoopAtMoveEnd: true,
       mirrorX: true
     }
   });
   const SPECIAL_PERFORMER_ACTION_IDS = Object.freeze(Object.keys(SPECIAL_PERFORMER_ACTIONS));
+  const CHOREO_CLIP_LABELS = Object.freeze({
+    1: "\uADF8\uB0E5\uCDA4",
+    2: "\uB450\uD314T\uC790\uCDA4",
+    3: "\uB3CC\uACE0\uD55C\uC190\uBED7\uAE30",
+    4: "\uB208\uAC10\uACE0\uB178\uB798",
+    5: "\uCC9C\uCC9C\uD788 \uD55C\uBC1C \uB4E4\uAE30",
+    6: "\uB450\uC190\uB4E4\uACE0 \uB3CC\uAE30",
+    7: "\uB208\uB728\uACE0\uB178\uB798",
+    8: "\uB450\uBC14\uD034\uB3CC\uAE30",
+    9: "\uB208\uAC10\uACE0\uB3CC\uACE0\uCC29\uC9C0",
+    10: "\uD55C\uC190\uB4E4\uACE0 \uB178\uB798",
+    11: "\uB2E4\uB9AC\uCDA4"
+  });
   const QUEUE_STORAGE_KEY = "performance_choreo_queue_v1";
   const CHROMA_KEY_CONFIG = {
     keyColor: [0.06, 0.95, 0.08],
-    similarity: 0.30,
-    smoothness: 0.08,
-    spill: 1.0,
-    despill: 1.0
+    similarity: 0.365,
+    smoothness: 0.055,
+    spill: 1.22,
+    despill: 1.62
   };
 
   const SHOW_MODES = {
@@ -133,6 +150,11 @@
     queueLoadBtn: document.getElementById("queue-load-btn"),
     queueClearBtn: document.getElementById("queue-clear-btn"),
     queueStatus: document.getElementById("queue-status"),
+    queuePanelTitle: document.getElementById("queue-panel-title"),
+    choreoSummary: document.getElementById("host-section-choreo-summary"),
+    choreoPanelTitle: document.getElementById("choreo-panel-title"),
+    specialActionTitle: document.getElementById("special-action-title"),
+    clipNameSpans: Array.from(document.querySelectorAll("[data-clip-label]")),
     networkPanelToggleBtn: document.getElementById("network-panel-toggle-btn"),
     networkPanel: document.getElementById("network-panel"),
     networkRoleSelect: document.getElementById("network-role-select"),
@@ -184,6 +206,56 @@
   if (!dom.canvasRoot || !dom.loading || !window.THREE || !window.THREE.OrbitControls) {
     return;
   }
+
+  function hydrateChoreoPanelLabels() {
+    if (dom.queuePanelTitle) {
+      dom.queuePanelTitle.textContent = "\uD050 \uC7AC\uC0DD \uC81C\uC5B4";
+    }
+    if (dom.choreoSummary) {
+      dom.choreoSummary.textContent = "\uC548\uBB34 \uD074\uB9BD";
+    }
+    if (dom.choreoPanelTitle) {
+      dom.choreoPanelTitle.textContent = "\uC548\uBB34 \uD074\uB9BD (1~11)";
+    }
+    if (dom.specialActionTitle) {
+      dom.specialActionTitle.textContent = "0-0 / 0-1 \uD2B9\uC218 \uB3D9\uC791";
+    }
+    if (dom.queueSaveBtn) {
+      dom.queueSaveBtn.textContent = "\uD050 \uC800\uC7A5";
+    }
+    if (dom.queueLoadBtn) {
+      dom.queueLoadBtn.textContent = "\uD050 \uBD88\uB7EC\uC624\uAE30";
+    }
+    if (dom.queueClearBtn) {
+      dom.queueClearBtn.textContent = "\uD050 \uCD08\uAE30\uD654";
+    }
+
+    if (Array.isArray(dom.clipNameSpans)) {
+      dom.clipNameSpans.forEach((span) => {
+        const clipId = Math.trunc(Number(span?.dataset?.clipLabel || 0));
+        const label = CHOREO_CLIP_LABELS[clipId];
+        if (label) {
+          span.textContent = label;
+        }
+      });
+    }
+
+    const specialActionLabels = {
+      walk_in: "0-0 \uC785\uC7A5 \uC6CC\uD0B9",
+      idle_hold: "0-1 \uC81C\uC790\uB9AC \uC815\uC9C0",
+      greet: "0-1 \uC778\uC0AC (3~10s)",
+      walk_out: "0-0 \uD1F4\uC7A5 \uC6CC\uD0B9(\uBC18\uC804)"
+    };
+    dom.performerActionButtons.forEach((button) => {
+      const actionId = String(button.dataset.performerAction || "").trim();
+      const label = specialActionLabels[actionId];
+      if (label) {
+        button.textContent = label;
+      }
+    });
+  }
+
+  hydrateChoreoPanelLabels();
 
   const THREE = window.THREE;
   const userAgent = String(navigator.userAgent || "").toLowerCase();
@@ -2231,6 +2303,8 @@ function applyQuality() {
         clipId,
         src: CLIP_VIDEO_PATHS[clipId],
         startTime: 0,
+        loop: false,
+        stopLoopAtMoveEnd: false,
         mirrorX: false,
         holdX: PERFORMER_BASE_POSITION.x
       };
@@ -2250,6 +2324,8 @@ function applyQuality() {
       moveFromX: Number(def.moveFromX),
       moveToX: Number(def.moveToX),
       moveDuration: Number(def.moveDuration),
+      loop: Boolean(def.loop),
+      stopLoopAtMoveEnd: Boolean(def.stopLoopAtMoveEnd),
       mirrorX: Boolean(def.mirrorX)
     };
   }
@@ -2266,6 +2342,9 @@ function applyQuality() {
 
   function resetPerformerRuntime() {
     performerActionRuntime = null;
+    if (chromaVideo) {
+      chromaVideo.loop = false;
+    }
     applyPerformerTransform(PERFORMER_BASE_POSITION.x, false);
   }
 
@@ -2286,6 +2365,14 @@ function applyQuality() {
       const eased = linear < 0.5 ? 2 * linear * linear : 1 - Math.pow(-2 * linear + 2, 2) / 2;
       const x = runtime.moveFromX + (runtime.moveToX - runtime.moveFromX) * eased;
       applyPerformerTransform(x, runtime.mirrorX);
+
+      if (linear >= 1 && !runtime.moveCompleted) {
+        runtime.moveCompleted = true;
+        if (runtime.loop && runtime.stopLoopAtMoveEnd && chromaVideo) {
+          chromaVideo.loop = false;
+          chromaVideo.pause();
+        }
+      }
     }
 
     if (Number.isFinite(runtime.endTime) && chromaVideo) {
@@ -2413,6 +2500,7 @@ function applyQuality() {
     }
 
     const startTime = Math.max(0, Number(config.startTime) || 0);
+    chromaVideo.loop = Boolean(config.loop);
     chromaVideo.currentTime = startTime;
     const playPromise = chromaVideo.play();
     if (playPromise && typeof playPromise.catch === "function") {
@@ -2447,7 +2535,10 @@ function applyQuality() {
       moveFromX: config.moveFromX,
       moveToX: config.moveToX,
       moveDuration: config.moveDuration,
+      moveCompleted: false,
       endTime: Number.isFinite(config.endTime) ? config.endTime : NaN,
+      loop: Boolean(config.loop),
+      stopLoopAtMoveEnd: Boolean(config.stopLoopAtMoveEnd),
       mirrorX: Boolean(config.mirrorX)
     };
 

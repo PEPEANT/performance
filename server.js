@@ -11,7 +11,7 @@ const CHAT_MIN_INTERVAL_MS = 250;
 const PLAYER_STATE_MIN_INTERVAL_MS = 50;
 const SNAPSHOT_INTERVAL_MS = 100;
 const CLIP_ID_MIN = 1;
-const CLIP_ID_MAX = 10;
+const CLIP_ID_MAX = 11;
 const LOBBY_POSTER_MAX_DATA_URL_LENGTH = 2_800_000;
 const SPECIAL_PERFORMER_ACTION_IDS = new Set(["walk_in", "idle_hold", "greet", "walk_out"]);
 
