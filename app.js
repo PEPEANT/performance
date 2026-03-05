@@ -369,6 +369,7 @@
   let pendingShowStartFromHost = false;
   let lastNetworkShowPlaying = null;
   let lastNetworkShowStartedAtMs = 0;
+  let serverClockOffsetMs = 0;
   let lastNetworkActiveClipId = 0;
   let lastNetworkActiveActionId = "";
   let clientDisplayName = requestedPlayerName || ("\uD50C\uB808\uC774\uC5B4-" + Math.floor(Math.random() * 9000 + 1000));
@@ -1625,7 +1626,22 @@ function applyQuality() {
     if (!Number.isFinite(lastNetworkShowStartedAtMs) || lastNetworkShowStartedAtMs <= 0) {
       return 0;
     }
-    return Math.max(0, (Date.now() - lastNetworkShowStartedAtMs) / 1000);
+    const estimatedServerNow = Date.now() + serverClockOffsetMs;
+    return Math.max(0, (estimatedServerNow - lastNetworkShowStartedAtMs) / 1000);
+  }
+
+  function syncServerClockOffset(serverNowMs) {
+    const nextServerNow = Number(serverNowMs);
+    if (!Number.isFinite(nextServerNow) || nextServerNow <= 0) {
+      return;
+    }
+    const sampleOffset = nextServerNow - Date.now();
+    if (!Number.isFinite(serverClockOffsetMs) || Math.abs(serverClockOffsetMs) < 1) {
+      serverClockOffsetMs = sampleOffset;
+      return;
+    }
+    // Smooth jitter while still converging quickly after reconnect.
+    serverClockOffsetMs = serverClockOffsetMs * 0.8 + sampleOffset * 0.2;
   }
 
   function startShow(options = {}) {
@@ -3109,6 +3125,9 @@ function removeRemotePlayerById(playerId) {
   }
 
 function applyShowStateFromNetwork(showState, force) {
+    if (showState && Object.prototype.hasOwnProperty.call(showState, "serverNow")) {
+      syncServerClockOffset(showState.serverNow);
+    }
     const nextPlaying = Boolean(showState && showState.playing);
     const startedAt = Number((showState && showState.startedAt) || 0);
     const activeClipId = normalizeClipId(showState && showState.activeClip);
@@ -3232,6 +3251,7 @@ function setupRealtime() {
     });
 
     socket.on("room:joined", (payload) => {
+      syncServerClockOffset(payload && payload.serverNow);
       selfSocketId = payload && payload.selfId ? payload.selfId : socket.id;
       setHostRole(payload && payload.hostId ? payload.hostId : null);
       applyRoomSnapshot(payload);
@@ -3250,6 +3270,7 @@ function setupRealtime() {
     });
 
     socket.on("room:snapshot", (payload) => {
+      syncServerClockOffset(payload && payload.serverNow);
       if (payload && Object.prototype.hasOwnProperty.call(payload, "hostId")) {
         setHostRole(payload.hostId);
       }

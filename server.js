@@ -657,7 +657,8 @@ function handleShowStart(socket, payload) {
   io.to(room.key).emit("show:state", {
     roomId: room.roomId,
     hostId: room.hostId,
-    ...room.showState
+    ...room.showState,
+    serverNow: Date.now()
   });
 }
 
@@ -689,7 +690,8 @@ function handleShowStop(socket) {
   io.to(room.key).emit("show:state", {
     roomId: room.roomId,
     hostId: room.hostId,
-    ...room.showState
+    ...room.showState,
+    serverNow: Date.now()
   });
 }
 
