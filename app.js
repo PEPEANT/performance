@@ -3157,7 +3157,11 @@ function clampNumber(value, min, max) {
   function applyUiVisibilityMode() {
     const hideOptionalUi = !adminUiMode;
     if (dom.hostSections && dom.hostSections.length) {
-      dom.hostSections.forEach((section) => setElementHidden(section, hideOptionalUi));
+      dom.hostSections.forEach((section) => {
+        const sectionId = String(section?.id || "");
+        const keepVisible = sectionId === "host-section-network" && !isMobile;
+        setElementHidden(section, hideOptionalUi && !keepVisible);
+      });
     }
     setElementHidden(dom.introStats, hideOptionalUi);
     setElementHidden(dom.controlsTitle, hideOptionalUi);
@@ -3165,7 +3169,7 @@ function clampNumber(value, min, max) {
     setElementHidden(dom.opsStack, hideOptionalUi);
     setElementHidden(dom.clipPanel, hideOptionalUi);
     setElementHidden(dom.chatUi, !chatEnabled);
-    setElementHidden(dom.networkPanelToggleBtn, hideOptionalUi);
+    setElementHidden(dom.networkPanelToggleBtn, false);
 
     if (hideOptionalUi) {
       setNetworkPanelExpanded(false);

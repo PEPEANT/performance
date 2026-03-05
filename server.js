@@ -13,7 +13,7 @@ const SNAPSHOT_INTERVAL_MS = 100;
 const CLIP_ID_MIN = 1;
 const CLIP_ID_MAX = 11;
 const LOBBY_POSTER_MAX_DATA_URL_LENGTH = 2_800_000;
-const SPECIAL_PERFORMER_ACTION_IDS = new Set(["walk_in", "idle_hold", "greet", "walk_out"]);
+const SPECIAL_PERFORMER_ACTION_IDS = new Set(["walk_in", "idle_hold", "greet", "walk_out", "hide"]);
 
 const app = express();
 const rootDir = __dirname;
