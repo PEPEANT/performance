@@ -58,12 +58,13 @@ async function waitServerReady(timeoutMs = 12000) {
 
 async function checkHttpRoutes(checks) {
   const targets = [
-    { name: 'route_root', url: `${BASE_URL}/`, expect: 'text/html' },
-    { name: 'route_performance', url: `${BASE_URL}/performance/`, expect: 'text/html' },
-    { name: 'route_performance_index', url: `${BASE_URL}/performance/index.html?from=emptines`, expect: 'text/html' },
-    { name: 'route_performance_app', url: `${BASE_URL}/performance/app.js`, expect: 'application/javascript' },
-    { name: 'route_performance_style', url: `${BASE_URL}/performance/style.css`, expect: 'text/css' },
-    { name: 'route_performance_manifest', url: `${BASE_URL}/performance/asset-manifest.json`, expect: 'application/json' }
+    { name: 'route_root', url: `${BASE_URL}/`, expect: 'text/html', requireUtf8: true },
+    { name: 'route_performance', url: `${BASE_URL}/performance/`, expect: 'text/html', requireUtf8: true },
+    { name: 'route_performance_index', url: `${BASE_URL}/performance/index.html?from=emptines`, expect: 'text/html', requireUtf8: true },
+    { name: 'route_performance_app', url: `${BASE_URL}/performance/app.js`, expect: 'application/javascript', requireUtf8: true },
+    { name: 'route_performance_style', url: `${BASE_URL}/performance/style.css`, expect: 'text/css', requireUtf8: true },
+    { name: 'route_performance_manifest', url: `${BASE_URL}/performance/asset-manifest.json`, expect: 'application/json', requireUtf8: false },
+    { name: 'route_performance_show_mobile', url: `${BASE_URL}/performance/01.mobile.mp4`, expect: 'video/mp4', requireUtf8: false }
   ];
 
   for (const item of targets) {
@@ -75,7 +76,7 @@ async function checkHttpRoutes(checks) {
       detail: { status: response.status, contentType }
     });
 
-    if (item.expect !== 'application/json') {
+    if (item.requireUtf8) {
       checks.push({
         name: `${item.name}_utf8`,
         ok: contentType.includes('charset=utf-8'),

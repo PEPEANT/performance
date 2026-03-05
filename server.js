@@ -99,6 +99,10 @@ app.get(["/01.mp4", "/performance/01.mp4"], (_req, res) => {
   res.sendFile(path.join(staticRoot, "01.mp4"));
 });
 
+app.get(["/01.mobile.mp4", "/performance/01.mobile.mp4"], (_req, res) => {
+  res.sendFile(path.join(staticRoot, "01.mobile.mp4"));
+});
+
 app.use("/assets", express.static(path.join(staticRoot, "assets"), staticOptions));
 app.use("/WEBM", express.static(path.join(staticRoot, "WEBM"), staticOptions));
 app.use("/performance/assets", express.static(path.join(staticRoot, "assets"), staticOptions));
