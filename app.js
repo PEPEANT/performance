@@ -237,8 +237,9 @@
   });
   const LOBBY_HALL_AUTO_ENTER_Z = LOBBY_BOUNDS.maxZ - 1.0;
   const LOBBY_HALL_AUTO_ENTER_HALF_WIDTH = LOBBY_BOUNDS.corridorHalfWidth + 0.75;
-  const HALL_LOBBY_AUTO_RETURN_Z = 39.0;
+  const HALL_LOBBY_AUTO_RETURN_Z = 38.3;
   const HALL_LOBBY_AUTO_RETURN_HALF_WIDTH = LOBBY_HALL_AUTO_ENTER_HALF_WIDTH;
+  const CORRIDOR_MAP_SWITCH_COOLDOWN_MS = 900;
   const LOBBY_PORTAL_ENTRY_RADIUS = 4.8;
   const LOBBY_PORTAL_ENTRY_RADIUS_SQ = LOBBY_PORTAL_ENTRY_RADIUS * LOBBY_PORTAL_ENTRY_RADIUS;
   const LOBBY_DOOR_ENTRY_RADIUS = 3.2;
@@ -388,6 +389,7 @@
   let lobbyPosterLoadToken = 0;
   let lobbyPosterUploading = false;
   let lobbyPosterFileInput = null;
+  let lastCorridorMapSwitchAt = 0;
 
   dom.portalActionBtn.addEventListener("click", () => handleLobbyInteract());
   if (dom.showStartBtn) {
@@ -426,9 +428,22 @@
 
     if (event.repeat) return;
 
-    if (key === "e" && tryOpenLobbyPosterPickerByKey()) {
-      event.preventDefault();
-      return;
+    if (key === "e") {
+      if (tryOpenLobbyPosterPickerByKey()) {
+        event.preventDefault();
+        return;
+      }
+      if (activeMap === "lobby") {
+        if (enterExternalPortal()) {
+          event.preventDefault();
+          return;
+        }
+        if (isNearLobbyDoor()) {
+          enterHall();
+          event.preventDefault();
+          return;
+        }
+      }
     }
 
     if (key === " " || key === "space" || key === "spacebar" || code === "space") {
@@ -1459,14 +1474,19 @@
     if (!shouldAutoEnterHallFromLobby()) {
       return;
     }
+    const nowMs = Date.now();
+    if (nowMs - lastCorridorMapSwitchAt < CORRIDOR_MAP_SWITCH_COOLDOWN_MS) {
+      return;
+    }
     const prevYaw = playerYaw;
     const prevPitch = playerPitch;
     transitionInFlight = true;
+    lastCorridorMapSwitchAt = nowMs;
     setMap("hall", false, { preserveView: true });
 
     const nextX = clampNumber(camera.position.x * 1.05, -6.5, 6.5);
     const eyeY = PLAYER_EYE_HEIGHT.hall;
-    camera.position.set(nextX, eyeY, 38.9);
+    camera.position.set(nextX, eyeY, 40.6);
 
     playerYaw = prevYaw;
     playerPitch = prevPitch;
@@ -1489,10 +1509,15 @@
     if (!shouldAutoReturnLobbyFromHall()) {
       return;
     }
+    const nowMs = Date.now();
+    if (nowMs - lastCorridorMapSwitchAt < CORRIDOR_MAP_SWITCH_COOLDOWN_MS) {
+      return;
+    }
 
     const prevYaw = playerYaw;
     const prevPitch = playerPitch;
     transitionInFlight = true;
+    lastCorridorMapSwitchAt = nowMs;
     setMap("lobby", false, { preserveView: true });
 
     const nextX = clampNumber(camera.position.x * 0.85, -3.2, 3.2);
@@ -2785,6 +2810,9 @@ function clampNumber(value, min, max) {
 
   function applyCameraCollision() {
     if (activeMap === "lobby") {
+      if (enterExternalPortal()) {
+        return;
+      }
       if (firstPersonEnabled) {
         resolveLobbyHorizontalPosition(camera.position);
         // Keep lobby corridor and hall traversal seamless for walkers.
