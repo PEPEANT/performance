@@ -167,15 +167,10 @@
     optionVersionNote: document.getElementById("option-version-note"),
     optionSoundBtn: document.getElementById("option-sound-btn"),
     networkPanel: document.getElementById("network-panel"),
-    networkRoleSelect: document.getElementById("network-role-select"),
-    networkRoomInput: document.getElementById("network-room-input"),
-    networkNameInput: document.getElementById("network-name-input"),
-    networkApplyBtn: document.getElementById("network-apply-btn"),
     nicknameGate: document.getElementById("nickname-gate"),
     nicknameGateInput: document.getElementById("nickname-gate-input"),
     nicknameGateConfirmBtn: document.getElementById("nickname-gate-confirm-btn"),
     nicknameGateNote: document.getElementById("nickname-gate-note"),
-    networkNote: document.getElementById("network-note"),
     controlsTitle: document.querySelector(".panel-controls h2"),
     presetGrid: document.querySelector(".panel-controls .preset-grid"),
     opsStack: document.querySelector(".panel-controls .ops-stack"),
@@ -692,9 +687,6 @@
   initializePortalExitUrl();
   setupNetworkPanelToggle();
   applyUiVisibilityMode();
-  if (adminUiMode) {
-    setupNetworkProfileUi();
-  }
   setupShowMedia();
   setupPlayerSystem();
   setupFirstPersonControls();
@@ -1189,9 +1181,6 @@
 
         requestedPlayerName = nextName;
         clientDisplayName = nextName;
-        if (dom.networkNameInput) {
-          dom.networkNameInput.value = nextName;
-        }
         if (dom.nicknameGateNote) {
           dom.nicknameGateNote.textContent = "\uC785\uC7A5 \uC900\uBE44 \uC644\uB8CC";
         }
@@ -3854,15 +3843,6 @@ function emitLocalPlayerState(force) {
     socket.emit("player:state", getLocalPlayerState());
   }
 
-function updateNetworkNoteStatus() {
-    if (!dom.networkNote) return;
-    const requested = hostMode ? "호스트" : "플레이어";
-    const granted = roomHostId
-      ? (roomHostId === selfSocketId ? "내가 호스트" : "다른 유저가 호스트")
-      : "호스트 없음";
-    dom.networkNote.textContent = `요청 역할: ${requested} | 현재 권한: ${granted} | 룸 ${networkRoomId}`;
-  }
-
 function setHostRole(nextHostId) {
     roomHostId = nextHostId || null;
     isHostClient = roomHostId ? roomHostId === selfSocketId : hostMode;
@@ -3889,7 +3869,6 @@ function setHostRole(nextHostId) {
     updateDoorUi();
     updateFxButtons();
     updateHud();
-    updateNetworkNoteStatus();
   }
 
 function applyRoomSnapshot(snapshot) {
@@ -4077,7 +4056,6 @@ function setupRealtime() {
       emitLocalPlayerState(true);
       updateShowStartButton();
       updateHud();
-      updateNetworkNoteStatus();
     });
 
     socket.on("disconnect", () => {
@@ -4088,7 +4066,6 @@ function setupRealtime() {
       appendChatLine("\uC2DC\uC2A4\uD15C", "\uC11C\uBC84 \uC5F0\uACB0\uC774 \uB04A\uACBC\uC2B5\uB2C8\uB2E4. \uC7AC\uC5F0\uACB0 \uC911\uC785\uB2C8\uB2E4.", "system");
       updateShowStartButton();
       updateHud();
-      updateNetworkNoteStatus();
     });
 
     socket.on("room:joined", (payload) => {
@@ -4495,40 +4472,6 @@ function visibleRemotePlayerCount() {
     const modeText = firstPersonEnabled ? (pointerLocked ? "1인칭" : "1인칭 준비") : "시네마";
     const mapText = activeMap === "hall" ? "공연장" : "로비";
     return `${roleText} | ${modeText} | ${mapText} | ${showPlaying ? "공연 중" : "대기 중"}`;
-  }
-
-function setupNetworkProfileUi() {
-    if (!dom.networkRoleSelect || !dom.networkRoomInput || !dom.networkNameInput || !dom.networkApplyBtn) {
-      return;
-    }
-
-    dom.networkRoleSelect.value = hostMode ? "host" : "player";
-    dom.networkRoomInput.value = networkRoomId;
-    dom.networkNameInput.value = requestedPlayerName;
-
-    updateNetworkNoteStatus();
-
-    dom.networkApplyBtn.addEventListener("click", () => {
-      const nextHostMode = String(dom.networkRoleSelect.value || "host").trim().toLowerCase() !== "player";
-      const nextRoomId = String(dom.networkRoomInput.value || "main")
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]/g, "")
-        .slice(0, 32) || "main";
-      const nextName = sanitizePlayerName(dom.networkNameInput.value || "");
-
-      const nextQuery = new URLSearchParams(window.location.search);
-      nextQuery.set("host", nextHostMode ? "1" : "0");
-      nextQuery.set("room", nextRoomId);
-      if (nextName) {
-        nextQuery.set("name", nextName);
-      } else {
-        nextQuery.delete("name");
-      }
-
-      persistPlayerName(nextName);
-      window.location.search = nextQuery.toString();
-    });
   }
 
 function setupChatUi() {
