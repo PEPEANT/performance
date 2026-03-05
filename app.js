@@ -1234,7 +1234,7 @@
   }
 
   function shouldAutoEnterHallFromLobby(position = camera.position) {
-    if (activeMap !== "lobby" || !doorOpen || !firstPersonEnabled || transitionInFlight) {
+    if (activeMap !== "lobby" || !doorOpen || transitionInFlight) {
       return false;
     }
     return position.z >= LOBBY_HALL_AUTO_ENTER_Z && Math.abs(position.x) <= LOBBY_HALL_AUTO_ENTER_HALF_WIDTH;
@@ -2515,6 +2515,8 @@ function clampNumber(value, min, max) {
     if (activeMap === "lobby") {
       if (firstPersonEnabled) {
         resolveLobbyHorizontalPosition(camera.position);
+        // Keep lobby corridor and hall traversal seamless for walkers.
+        enterHallFromCorridor();
         return;
       }
       clampLobbyPoint(camera.position);
