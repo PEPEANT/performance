@@ -512,9 +512,10 @@ function handlePerformerClip(socket, payload) {
     return;
   }
 
-  const fallbackClipId = sanitizeClipId(payload?.clipId, room.showState.activeClip || 0);
-  const fallbackActionId = room.showState.activeAction || clipActionId(fallbackClipId || room.showState.activeClip || 0);
-  const actionId = sanitizePerformerActionId(payload?.actionId, fallbackActionId);
+  const requestedClipId = sanitizeClipId(payload?.clipId, 0);
+  const explicitActionId = sanitizePerformerActionId(payload?.actionId, "");
+  const fallbackActionId = room.showState.activeAction || clipActionId(room.showState.activeClip || 0);
+  const actionId = explicitActionId || (requestedClipId ? clipActionId(requestedClipId) : fallbackActionId);
   if (!actionId) {
     socket.emit("room:error", {
       code: "INVALID_CLIP",
@@ -524,7 +525,7 @@ function handlePerformerClip(socket, payload) {
     return;
   }
 
-  const clipId = clipIdFromActionId(actionId) || fallbackClipId;
+  const clipId = clipIdFromActionId(actionId) || requestedClipId || sanitizeClipId(room.showState.activeClip, 0);
   room.showState.activeClip = clipId;
   room.showState.activeAction = actionId;
   socket.to(room.key).emit("performer:clip", {
@@ -646,10 +647,12 @@ function handleShowStart(socket, payload) {
     return;
   }
 
-  const fallbackClipId = sanitizeClipId(payload?.activeClip, room.showState.activeClip || CLIP_ID_MIN);
-  const fallbackActionId = room.showState.activeAction || clipActionId(fallbackClipId || room.showState.activeClip || CLIP_ID_MIN);
-  const requestedActionId = sanitizePerformerActionId(payload?.activeAction, fallbackActionId);
-  const requestedClipId = clipIdFromActionId(requestedActionId) || fallbackClipId || CLIP_ID_MIN;
+  const requestedClipInput = sanitizeClipId(payload?.activeClip, 0);
+  const explicitActionId = sanitizePerformerActionId(payload?.activeAction, "");
+  const fallbackClipId = sanitizeClipId(room.showState.activeClip, CLIP_ID_MIN) || CLIP_ID_MIN;
+  const fallbackActionId = room.showState.activeAction || clipActionId(fallbackClipId);
+  const requestedActionId = explicitActionId || (requestedClipInput ? clipActionId(requestedClipInput) : fallbackActionId);
+  const requestedClipId = clipIdFromActionId(requestedActionId) || requestedClipInput || fallbackClipId || CLIP_ID_MIN;
 
   room.showState = {
     playing: true,
