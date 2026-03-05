@@ -139,6 +139,8 @@ body {
   z-index: 12;
   max-height: calc(100vh - 28px);
   overflow: auto;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 h1 {
