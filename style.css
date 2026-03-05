@@ -129,6 +129,18 @@ body {
   margin-top: 10px;
 }
 
+/* Host "공연/효과" panel pinned to top-right on desktop */
+#host-section-stage {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  width: min(430px, calc(100vw - 28px));
+  margin-top: 0;
+  z-index: 12;
+  max-height: calc(100vh - 28px);
+  overflow: auto;
+}
+
 h1 {
   margin: 0 0 9px 0;
   font-size: clamp(1rem, 2.5vw, 1.36rem);
@@ -604,6 +616,13 @@ p {
   .stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  #host-section-stage {
+    top: 11px;
+    right: 11px;
+    width: min(430px, calc(100vw - 22px));
+    max-height: calc(100vh - 22px);
+  }
 }
 
 @media (max-width: 640px) {
@@ -625,6 +644,15 @@ p {
 
   .clip-grid-named {
     grid-template-columns: 1fr;
+  }
+
+  #host-section-stage {
+    position: static;
+    top: auto;
+    right: auto;
+    width: auto;
+    max-height: none;
+    overflow: hidden;
   }
 
   #hud {

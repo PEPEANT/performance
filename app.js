@@ -123,6 +123,7 @@
 
   const dom = {
     overlay: document.getElementById("overlay"),
+    stageSection: document.getElementById("host-section-stage"),
     canvasRoot: document.getElementById("canvas-root"),
     loading: document.getElementById("loading"),
     statusIntent: document.getElementById("status-intent"),
@@ -206,6 +207,15 @@
   if (!dom.canvasRoot || !dom.loading || !window.THREE || !window.THREE.OrbitControls) {
     return;
   }
+
+  function splitStagePanelFromLeftControls() {
+    if (!dom.overlay || !dom.stageSection) return;
+    if (dom.stageSection.parentElement === dom.overlay) return;
+    // Move stage controls outside left panel so fixed positioning is viewport-based.
+    dom.overlay.appendChild(dom.stageSection);
+  }
+
+  splitStagePanelFromLeftControls();
 
   function hydrateChoreoPanelLabels() {
     if (dom.queuePanelTitle) {
@@ -1204,13 +1214,24 @@
   }
 
   function isNearLobbyPoster(position = camera.position) {
-    if (!lobbyMap.posterSurface || typeof lobbyMap.posterSurface.getWorldPosition !== "function") {
+    const posterTargets = Array.isArray(lobbyMap.posterSurfaces) && lobbyMap.posterSurfaces.length
+      ? lobbyMap.posterSurfaces
+      : (lobbyMap.posterSurface ? [lobbyMap.posterSurface] : []);
+    if (!posterTargets.length) {
       return false;
     }
-    lobbyMap.posterSurface.getWorldPosition(lobbyPosterWorldPosition);
-    const dx = position.x - lobbyPosterWorldPosition.x;
-    const dz = position.z - lobbyPosterWorldPosition.z;
-    return dx * dx + dz * dz <= LOBBY_POSTER_ENTRY_RADIUS_SQ;
+    for (const posterSurface of posterTargets) {
+      if (!posterSurface || typeof posterSurface.getWorldPosition !== "function") {
+        continue;
+      }
+      posterSurface.getWorldPosition(lobbyPosterWorldPosition);
+      const dx = position.x - lobbyPosterWorldPosition.x;
+      const dz = position.z - lobbyPosterWorldPosition.z;
+      if (dx * dx + dz * dz <= LOBBY_POSTER_ENTRY_RADIUS_SQ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function ensureLobbyPosterFileInput() {
@@ -1322,7 +1343,9 @@
 
   function applyLobbyPosterData(dataUrl, options = {}) {
     const { broadcast = false } = options;
-    if (!lobbyMap.posterSurface || !lobbyMap.posterMaterial) return;
+    const hasPosterSurface = (Array.isArray(lobbyMap.posterSurfaces) && lobbyMap.posterSurfaces.length > 0)
+      || !!lobbyMap.posterSurface;
+    if (!hasPosterSurface || !lobbyMap.posterMaterial) return;
     const safeDataUrl = String(dataUrl || "").trim();
     if (!safeDataUrl) return;
 
@@ -4300,15 +4323,7 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     rightWall.position.x = 14;
     group.add(leftWall, rightWall);
 
-    const posterFrame = new THREERef.Mesh(
-      new THREERef.BoxGeometry(0.16, 3.72, 6.34),
-      new THREERef.MeshStandardMaterial({ color: 0x1f2f47, roughness: 0.38, metalness: 0.22 })
-    );
-    posterFrame.position.set(13.48, 3.12, 14.0);
-    posterFrame.castShadow = true;
-    posterFrame.receiveShadow = true;
-    group.add(posterFrame);
-
+    const posterFrameMaterial = new THREERef.MeshStandardMaterial({ color: 0x1f2f47, roughness: 0.38, metalness: 0.22 });
     const posterMaterial = new THREERef.MeshStandardMaterial({
       color: 0x22374f,
       emissive: 0x101c2a,
@@ -4316,10 +4331,60 @@ function createLobbyMap(THREERef, targetScene, mobile) {
       roughness: 0.42,
       metalness: 0.08
     });
-    const posterSurface = new THREERef.Mesh(new THREERef.PlaneGeometry(5.9, 3.28), posterMaterial);
-    posterSurface.position.set(13.37, 3.12, 14.0);
-    posterSurface.rotation.y = -Math.PI / 2;
-    group.add(posterSurface);
+    const posterFrames = [];
+    const posterSurfaces = [];
+
+    function addPosterPanel(config) {
+      const {
+        frameGeometry,
+        framePosition,
+        surfacePosition,
+        surfaceRotationY
+      } = config;
+      const frame = new THREERef.Mesh(frameGeometry, posterFrameMaterial);
+      frame.position.copy(framePosition);
+      frame.castShadow = true;
+      frame.receiveShadow = true;
+      group.add(frame);
+      posterFrames.push(frame);
+
+      const surface = new THREERef.Mesh(new THREERef.PlaneGeometry(5.9, 3.28), posterMaterial);
+      surface.position.copy(surfacePosition);
+      surface.rotation.y = surfaceRotationY;
+      group.add(surface);
+      posterSurfaces.push(surface);
+    }
+
+    addPosterPanel({
+      frameGeometry: new THREERef.BoxGeometry(0.16, 3.72, 6.34),
+      framePosition: new THREERef.Vector3(13.48, 3.12, 14.0),
+      surfacePosition: new THREERef.Vector3(13.37, 3.12, 14.0),
+      surfaceRotationY: -Math.PI / 2
+    });
+    addPosterPanel({
+      frameGeometry: new THREERef.BoxGeometry(0.16, 3.72, 6.34),
+      framePosition: new THREERef.Vector3(-13.48, 3.12, 14.0),
+      surfacePosition: new THREERef.Vector3(-13.37, 3.12, 14.0),
+      surfaceRotationY: Math.PI / 2
+    });
+    addPosterPanel({
+      frameGeometry: new THREERef.BoxGeometry(6.34, 3.72, 0.16),
+      framePosition: new THREERef.Vector3(0, 3.12, 3.48),
+      surfacePosition: new THREERef.Vector3(0, 3.12, 3.59),
+      surfaceRotationY: 0
+    });
+    addPosterPanel({
+      frameGeometry: new THREERef.BoxGeometry(0.16, 3.72, 4.6),
+      framePosition: new THREERef.Vector3(3.76, 3.12, 30.0),
+      surfacePosition: new THREERef.Vector3(3.65, 3.12, 30.0),
+      surfaceRotationY: -Math.PI / 2
+    });
+    addPosterPanel({
+      frameGeometry: new THREERef.BoxGeometry(0.16, 3.72, 4.6),
+      framePosition: new THREERef.Vector3(-3.76, 3.12, 30.0),
+      surfacePosition: new THREERef.Vector3(-3.65, 3.12, 30.0),
+      surfaceRotationY: Math.PI / 2
+    });
 
     const corridorWallLeft = new THREERef.Mesh(new THREERef.BoxGeometry(0.75, 8, 14), wallMat);
     corridorWallLeft.position.set(-4.2, 4, 30);
@@ -4459,8 +4524,10 @@ function createLobbyMap(THREERef, targetScene, mobile) {
       doorLeft,
       doorRight,
       doorGlow,
-      posterFrame,
-      posterSurface,
+      posterFrame: posterFrames[0] || null,
+      posterSurface: posterSurfaces[0] || null,
+      posterFrames,
+      posterSurfaces,
       posterMaterial
     };
   }
