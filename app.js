@@ -1307,11 +1307,11 @@
 
   function setMap(nextMap, immediate) {
     activeMap = nextMap === "hall" ? "hall" : "lobby";
-    // Prevent lobby/hall geometry overlap by showing only the active map.
+    // Keep hall visible from lobby corridor so players see a continuous connection.
     lobbyMap.group.visible = activeMap === "lobby";
-    hallMap.group.visible = activeMap === "hall";
-    hallMap.seatingGroup.visible = activeMap === "hall";
-    scene.fog.density = activeMap === "hall" ? 0.014 : 0.02;
+    hallMap.group.visible = true;
+    hallMap.seatingGroup.visible = true;
+    scene.fog.density = activeMap === "hall" ? 0.014 : 0.017;
     controls.maxDistance = activeMap === "hall" ? 95 : 40;
 
     const defaultPreset = activeMap === "hall" ? "hall_wide" : "lobby_entry";
