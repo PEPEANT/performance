@@ -347,8 +347,8 @@ p {
 
 .network-panel {
   position: fixed;
-  top: calc(max(8px, env(safe-area-inset-top)) + 48px);
-  right: max(8px, env(safe-area-inset-right));
+  top: calc(max(0px, env(safe-area-inset-top)) + 48px);
+  right: max(0px, env(safe-area-inset-right));
   width: min(320px, calc(100vw - 16px));
   max-height: calc(100vh - 70px);
   margin: 0;
@@ -384,8 +384,8 @@ p {
 
 .network-toggle-btn {
   position: fixed;
-  top: max(8px, env(safe-area-inset-top));
-  right: max(8px, env(safe-area-inset-right));
+  top: max(0px, env(safe-area-inset-top));
+  right: max(0px, env(safe-area-inset-right));
   width: 44px;
   height: 44px;
   min-width: 44px;
@@ -1093,21 +1093,10 @@ body.mobile-simple-ui .panel-controls {
   pointer-events: none;
 }
 
-body.mobile-simple-ui #host-section-network {
-  margin: 0;
-  border: none;
-  background: transparent;
-  overflow: visible;
-}
-
-body.mobile-simple-ui #host-section-network > summary {
-  display: none;
-}
-
 body.mobile-simple-ui #network-panel-toggle-btn {
   position: fixed;
-  top: max(8px, env(safe-area-inset-top));
-  right: max(8px, env(safe-area-inset-right));
+  top: max(0px, env(safe-area-inset-top));
+  right: max(0px, env(safe-area-inset-right));
   width: 44px;
   height: 44px;
   min-width: 44px;
@@ -1125,8 +1114,8 @@ body.mobile-simple-ui #network-panel-toggle-btn {
 
 body.mobile-simple-ui #network-panel {
   position: fixed;
-  top: calc(max(8px, env(safe-area-inset-top)) + 48px);
-  right: max(8px, env(safe-area-inset-right));
+  top: calc(max(0px, env(safe-area-inset-top)) + 48px);
+  right: max(0px, env(safe-area-inset-right));
   width: min(320px, calc(100vw - 16px));
   max-height: calc(100vh - 70px);
   margin: 0;

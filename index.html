@@ -91,33 +91,15 @@
             </div>
           </div>
         </details>
-        <details class="host-section" id="host-section-network" open>
-          <summary>네트워크</summary>
+        <div id="options-anchor">
           <button id="network-panel-toggle-btn" class="ghost-btn network-toggle-btn" type="button" aria-expanded="false" aria-controls="network-panel">
-            온라인 접속 설정 열기
+            ⚙
           </button>
           <div id="network-panel" class="network-panel hidden">
             <button id="option-sound-btn" class="ghost-btn" type="button" aria-pressed="true">소리: 켜짐</button>
             <p id="option-version-note" class="ops-value hidden"></p>
-            <h3>온라인 접속</h3>
-            <div class="network-grid">
-              <label class="ops-label" for="network-role-select">역할</label>
-              <select id="network-role-select" class="quality-select">
-                <option value="host">호스트(관리자)</option>
-                <option value="player">플레이어(1인칭)</option>
-              </select>
-
-              <label class="ops-label" for="network-room-input">룸 코드</label>
-              <input id="network-room-input" class="network-input" type="text" maxlength="32" autocomplete="off" placeholder="main" />
-
-              <label class="ops-label" for="network-name-input">닉네임</label>
-              <input id="network-name-input" class="network-input" type="text" maxlength="24" autocomplete="off" placeholder="플레이어 이름" />
-            </div>
-            <button id="network-apply-btn" class="ghost-btn" type="button">역할 적용 및 재접속</button>
-            <p id="network-note" class="ops-value">현재 설정 확인 중...</p>
           </div>
-          <button id="return-lobby-btn" class="ghost-btn hidden" type="button">로비로 돌아가기</button>
-        </details>
+        </div>
 
         <button id="portal-action-btn" class="accent-btn hidden" type="button" aria-hidden="true" tabindex="-1">공연장 입장 (E)</button>
         <p id="portal-phase-note" class="ops-value hidden"></p>
@@ -172,7 +154,6 @@
         </div>
       </div>
       <div id="mobile-actions">
-        <button id="mobile-return" class="mobile-action-btn hidden" type="button">복귀</button>
         <button id="mobile-sprint" class="mobile-action-btn" type="button">질주</button>
         <button id="mobile-jump" class="mobile-action-btn" type="button">점프</button>
       </div>

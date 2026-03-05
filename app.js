@@ -515,7 +515,9 @@
       setDoorOpen(!doorOpen);
     });
   }
-  dom.returnLobbyBtn.addEventListener("click", () => handleReturnAction());
+  if (dom.returnLobbyBtn) {
+    dom.returnLobbyBtn.addEventListener("click", () => handleReturnAction());
+  }
   if (dom.mobileReturnBtn) {
     dom.mobileReturnBtn.addEventListener("pointerdown", () => handleReturnAction());
   }
@@ -1849,12 +1851,11 @@
     dom.portalActionBtn.classList.add("hidden");
     dom.portalPhaseNote?.classList.add("hidden");
     updateDoorUi();
-    const hasExternalReturn = Boolean(buildLobbyReturnUrl());
-    const showReturn = activeMap === "hall" || hasExternalReturn;
-    dom.returnLobbyBtn.classList.toggle("hidden", !showReturn);
-    dom.returnLobbyBtn.textContent = activeMap === "hall" ? "\uB85C\uBE44\uB85C \uB3CC\uC544\uAC00\uAE30" : "EMPTINES\uB85C \uBCF5\uADC0";
+    if (dom.returnLobbyBtn) {
+      dom.returnLobbyBtn.classList.add("hidden");
+    }
     if (dom.mobileReturnBtn) {
-      dom.mobileReturnBtn.classList.toggle("hidden", activeMap !== "hall");
+      dom.mobileReturnBtn.classList.add("hidden");
     }
     const hallOnly = activeMap === "hall";
     updateFxButtons();
