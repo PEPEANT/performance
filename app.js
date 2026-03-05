@@ -10,6 +10,7 @@
   const DEFAULT_PERFORMER_ACTION_ID = `clip:${DEFAULT_CLIP_ID}`;
   const PERFORMER_BASE_POSITION = Object.freeze({ x: 0, y: 5.6, z: -55.6 });
   const PERFORMER_LEFT_ENTRY_X = -22.5;
+  const MANUAL_HIDE_ACTION_ID = "hide";
   const SPECIAL_PERFORMER_ACTIONS = Object.freeze({
     walk_in: {
       src: "./WEBM/0-0_alpha.webm",
@@ -163,6 +164,7 @@
     specialActionTitle: document.getElementById("special-action-title"),
     clipNameSpans: Array.from(document.querySelectorAll("[data-clip-label]")),
     networkPanelToggleBtn: document.getElementById("network-panel-toggle-btn"),
+    optionVersionNote: document.getElementById("option-version-note"),
     networkPanel: document.getElementById("network-panel"),
     networkRoleSelect: document.getElementById("network-role-select"),
     networkRoomInput: document.getElementById("network-room-input"),
@@ -260,7 +262,8 @@
       walk_in: "0-0 \uC785\uC7A5 \uC6CC\uD0B9",
       idle_hold: "0-1 \uC81C\uC790\uB9AC \uC815\uC9C0",
       greet: "0-1 \uC778\uC0AC (3~10s)",
-      walk_out: "0-0 \uD1F4\uC7A5 \uC6CC\uD0B9(\uBC18\uC804)"
+      walk_out: "0-0 \uD1F4\uC7A5 \uC6CC\uD0B9(\uBC18\uC804)",
+      hide: "\uC784\uC2DC \uC228\uAE30\uAE30 (\uC26C\uAE30)"
     };
     dom.performerActionButtons.forEach((button) => {
       const actionId = String(button.dataset.performerAction || "").trim();
@@ -436,6 +439,7 @@
   let currentPerformerActionId = DEFAULT_PERFORMER_ACTION_ID;
   let performerActionRuntime = null;
   let performerHiddenAfterWalkOut = false;
+  let performerHiddenByManualAction = false;
   let queueEvents = [];
   let queuePlayIndex = 0;
   let queueRecording = false;
@@ -803,6 +807,11 @@
       dom.networkPanel.classList.toggle("hidden", !networkPanelExpanded);
     }
 
+    if (dom.optionVersionNote) {
+      dom.optionVersionNote.textContent = "\uBC84\uC804 1.2";
+      dom.optionVersionNote.classList.toggle("hidden", !networkPanelExpanded);
+    }
+
     if (dom.networkPanelToggleBtn) {
       dom.networkPanelToggleBtn.classList.toggle("active", networkPanelExpanded);
       dom.networkPanelToggleBtn.textContent = networkPanelExpanded
@@ -875,30 +884,52 @@
     }
 
     if (dom.mobileMovePad) {
+      const matchesMovePointer = (event) => event.pointerId === mobileMovePointerId;
+      const tryCaptureMovePointer = (pointerId) => {
+        try {
+          dom.mobileMovePad.setPointerCapture?.(pointerId);
+        } catch (_error) {}
+      };
+      const tryReleaseMovePointer = (pointerId) => {
+        try {
+          dom.mobileMovePad.releasePointerCapture?.(pointerId);
+        } catch (_error) {}
+      };
+
       dom.mobileMovePad.addEventListener("pointerdown", (event) => {
+        if (mobileMovePointerId !== null && event.pointerId !== mobileMovePointerId) {
+          return;
+        }
         mobileMovePointerId = event.pointerId;
-        dom.mobileMovePad.setPointerCapture?.(event.pointerId);
+        tryCaptureMovePointer(event.pointerId);
         updateMobileMoveFromPointer(event.clientX, event.clientY);
+        event.preventDefault();
       });
 
-      dom.mobileMovePad.addEventListener("pointermove", (event) => {
-        if (event.pointerId !== mobileMovePointerId) {
+      const handleMovePointer = (event) => {
+        if (!matchesMovePointer(event)) {
           return;
         }
         updateMobileMoveFromPointer(event.clientX, event.clientY);
-      });
+        event.preventDefault();
+      };
+
+      dom.mobileMovePad.addEventListener("pointermove", handleMovePointer);
+      window.addEventListener("pointermove", handleMovePointer, { passive: false });
 
       const clearMovePointer = (event) => {
-        if (event.pointerId !== mobileMovePointerId) {
+        if (!matchesMovePointer(event)) {
           return;
         }
-        dom.mobileMovePad.releasePointerCapture?.(event.pointerId);
+        tryReleaseMovePointer(event.pointerId);
         resetMobileMoveInput();
       };
 
       dom.mobileMovePad.addEventListener("pointerup", clearMovePointer);
       dom.mobileMovePad.addEventListener("pointercancel", clearMovePointer);
-      dom.mobileMovePad.addEventListener("pointerleave", clearMovePointer);
+      dom.mobileMovePad.addEventListener("lostpointercapture", clearMovePointer);
+      window.addEventListener("pointerup", clearMovePointer, { passive: true });
+      window.addEventListener("pointercancel", clearMovePointer, { passive: true });
     }
 
     if (dom.mobileJumpBtn) {
@@ -2445,6 +2476,9 @@ function applyQuality() {
     if (SPECIAL_PERFORMER_ACTION_IDS.includes(text)) {
       return text;
     }
+    if (text === MANUAL_HIDE_ACTION_ID) {
+      return MANUAL_HIDE_ACTION_ID;
+    }
     return "";
   }
 
@@ -2505,7 +2539,7 @@ function applyQuality() {
   }
 
   function showPerformerIdleStandPose() {
-    if (performerHiddenAfterWalkOut) {
+    if (performerHiddenAfterWalkOut || performerHiddenByManualAction) {
       if (hallMap.performerPlane) {
         hallMap.performerPlane.visible = false;
       }
@@ -2670,6 +2704,25 @@ function applyQuality() {
     });
   }
 
+  function applyManualPerformerHide(options = {}) {
+    const { fromNetwork = false, silent = false } = options;
+    performerHiddenByManualAction = true;
+    performerActionRuntime = null;
+
+    if (chromaVideo) {
+      chromaVideo.loop = false;
+      chromaVideo.pause();
+    }
+    if (hallMap.performerPlane) {
+      hallMap.performerPlane.visible = false;
+    }
+
+    setCurrentPerformerAction(MANUAL_HIDE_ACTION_ID, { fromNetwork });
+    if (!silent) {
+      updateQueueUi("\uD37C\uD3EC\uBA38\uB97C \uC784\uC2DC \uC228\uAE30\uAE30 \uC0C1\uD0DC\uB85C \uC804\uD658\uD588\uC2B5\uB2C8\uB2E4.");
+    }
+  }
+
   function playPerformerAction(actionId, options = {}) {
     const {
       record = true,
@@ -2690,7 +2743,36 @@ function applyQuality() {
       return;
     }
 
-    const config = getPerformerActionConfig(actionId);
+    const normalizedActionId = normalizePerformerActionId(actionId);
+    if (!normalizedActionId) {
+      return;
+    }
+
+    if (normalizedActionId === MANUAL_HIDE_ACTION_ID) {
+      applyManualPerformerHide({ fromNetwork, silent });
+
+      if (broadcast && socketConnected && isHostClient && socket && !fromNetwork) {
+        socket.emit("performer:clip", {
+          clipId: 0,
+          actionId: normalizedActionId,
+          songTime: Number(getSongTimeSeconds().toFixed(3)),
+          ts: Date.now()
+        });
+      }
+
+      if (record && queueRecording) {
+        if (!showPlaying || !stageVideo || stageVideo.ended) {
+          startShow();
+        }
+        const eventTime = Number(getSongTimeSeconds().toFixed(3));
+        queueEvents.push({ t: eventTime, action: normalizedActionId });
+        queueEvents.sort((a, b) => a.t - b.t);
+        updateQueueUi(`${queueEvents.length}\uAC1C \uD050 \uC800\uC7A5`);
+      }
+      return;
+    }
+
+    const config = getPerformerActionConfig(normalizedActionId);
     if (!config || !config.src) {
       return;
     }
@@ -2704,6 +2786,9 @@ function applyQuality() {
     }
     if (isWalkInAction) {
       performerHiddenAfterWalkOut = false;
+    }
+    if (performerHiddenByManualAction) {
+      performerHiddenByManualAction = false;
     }
 
     if (!chromaVideo || !chromaVideoReady) {
@@ -3461,6 +3546,7 @@ function clampNumber(value, min, max) {
 
     const delta = clock.getDelta();
     const elapsed = clock.getElapsedTime();
+    const nowSeconds = performance.now() / 1000;
     refreshPortalState(false);
 
     if (cameraTween) {
@@ -3487,7 +3573,7 @@ function clampNumber(value, min, max) {
     updateDoorVisuals();
     updateRemotePlayers(elapsed, delta);
     processQueuePlayback();
-    updatePerformerRuntime(elapsed);
+    updatePerformerRuntime(nowSeconds);
     monitorStageVideoPlayback();
 
     if (firstPersonEnabled) {
