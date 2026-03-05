@@ -165,6 +165,7 @@
     clipNameSpans: Array.from(document.querySelectorAll("[data-clip-label]")),
     networkPanelToggleBtn: document.getElementById("network-panel-toggle-btn"),
     optionVersionNote: document.getElementById("option-version-note"),
+    optionSoundBtn: document.getElementById("option-sound-btn"),
     networkPanel: document.getElementById("network-panel"),
     networkRoleSelect: document.getElementById("network-role-select"),
     networkRoomInput: document.getElementById("network-room-input"),
@@ -450,6 +451,7 @@
   let pointerLocked = false;
   let playerYaw = 0;
   let playerPitch = 0;
+  let soundEnabled = true;
   let chatCollapsed = isMobile;
   let networkPanelExpanded = false;
   let mobileMovePointerId = null;
@@ -800,6 +802,40 @@
     };
   }
 
+  function updateOptionSoundButton() {
+    if (!dom.optionSoundBtn) return;
+    dom.optionSoundBtn.textContent = soundEnabled ? "소리: 켜짐" : "소리: 꺼짐";
+    dom.optionSoundBtn.classList.toggle("active", soundEnabled);
+    dom.optionSoundBtn.setAttribute("aria-pressed", String(soundEnabled));
+  }
+
+  function applyStageVideoSoundState() {
+    if (!stageVideo) return;
+    if (soundEnabled) {
+      stageVideo.muted = false;
+      stageVideo.defaultMuted = false;
+      stageVideo.volume = 1.0;
+      return;
+    }
+    stageVideo.muted = true;
+    stageVideo.defaultMuted = true;
+    stageVideo.volume = 0.0;
+    stageVideoAwaitingUnmuteGesture = false;
+  }
+
+  function setSoundEnabled(enabled) {
+    soundEnabled = Boolean(enabled);
+    updateOptionSoundButton();
+    applyStageVideoSoundState();
+    if (!soundEnabled || !stageVideo || !showPlaying) {
+      return;
+    }
+    const resumePlay = stageVideo.play();
+    if (resumePlay && typeof resumePlay.catch === "function") {
+      resumePlay.catch(() => {});
+    }
+  }
+
   function setNetworkPanelExpanded(expanded) {
     networkPanelExpanded = Boolean(expanded);
 
@@ -826,10 +862,16 @@
       return;
     }
 
+    updateOptionSoundButton();
     setNetworkPanelExpanded(false);
     dom.networkPanelToggleBtn.addEventListener("click", () => {
       setNetworkPanelExpanded(!networkPanelExpanded);
     });
+    if (dom.optionSoundBtn) {
+      dom.optionSoundBtn.addEventListener("click", () => {
+        setSoundEnabled(!soundEnabled);
+      });
+    }
   }
 
   function setMovementStateFromMobileAxes(axisX, axisY) {
@@ -2011,12 +2053,13 @@ function applyQuality() {
     // Keep an ahead buffer on mobile to prevent long-track stalls around mid-playback.
     bg.preload = "auto";
     bg.loop = false;
-    bg.muted = false;
-    bg.volume = 1.0;
+    bg.muted = true;
+    bg.volume = 0.0;
     bg.playsInline = true;
     bg.crossOrigin = "anonymous";
     bg.setAttribute("webkit-playsinline", "true");
     stageVideo = bg;
+    applyStageVideoSoundState();
     ensureStageVideoAudioGraph();
 
     bg.addEventListener(
@@ -2232,9 +2275,7 @@ function applyQuality() {
       stageVideo.currentTime = offsetSec;
     }
     resetStageVideoWatchdog(stageVideo.currentTime);
-    stageVideo.muted = false;
-    stageVideo.defaultMuted = false;
-    stageVideo.volume = 1.0;
+    applyStageVideoSoundState();
     stageVideoAwaitingUnmuteGesture = false;
     setScreenVideoEnabled(true);
     resumeStageVideoAudioGraph();
@@ -2244,6 +2285,9 @@ function applyQuality() {
       stagePlay.catch((error) => {
         const errorName = String(error && error.name ? error.name : "");
         if (errorName !== "NotAllowedError" && errorName !== "AbortError") {
+          return;
+        }
+        if (!soundEnabled) {
           return;
         }
         stageVideo.muted = true;
@@ -2409,6 +2453,9 @@ function applyQuality() {
 
   function tryRestoreStageVideoAudio() {
     resumeStageVideoAudioGraph();
+    if (!soundEnabled) {
+      return;
+    }
     if (!stageVideoAwaitingUnmuteGesture || !stageVideo || !showPlaying) {
       return;
     }

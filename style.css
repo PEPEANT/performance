@@ -346,13 +346,20 @@ p {
 }
 
 .network-panel {
-  margin-top: 10px;
+  position: fixed;
+  top: calc(max(8px, env(safe-area-inset-top)) + 48px);
+  right: max(8px, env(safe-area-inset-right));
+  width: min(320px, calc(100vw - 16px));
+  max-height: calc(100vh - 70px);
+  margin: 0;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(255, 255, 255, 0.05);
   padding: 9px;
   display: grid;
   gap: 8px;
+  overflow: auto;
+  z-index: 73;
 }
 
 .network-grid {
@@ -376,12 +383,54 @@ p {
 }
 
 .network-toggle-btn {
-  margin-top: 10px;
+  position: fixed;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  margin: 0;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  z-index: 74;
 }
 
 .network-toggle-btn.active {
   border-color: rgba(128, 220, 255, 0.72);
   background: rgba(36, 118, 182, 0.24);
+}
+
+#host-section-network {
+  margin: 0;
+  border: none;
+  background: transparent;
+  overflow: visible;
+}
+
+#host-section-network > summary {
+  display: none;
+}
+
+#host-section-network > *:not(summary) {
+  margin: 0;
+}
+
+#network-panel > h3,
+#network-panel .network-grid,
+#network-apply-btn,
+#network-note {
+  display: none;
+}
+
+#option-sound-btn {
+  min-height: 36px;
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 .clip-panel {
   margin-top: 10px;
