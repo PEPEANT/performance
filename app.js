@@ -240,6 +240,9 @@
   const LOBBY_PORTAL_ENTRY_RADIUS_SQ = LOBBY_PORTAL_ENTRY_RADIUS * LOBBY_PORTAL_ENTRY_RADIUS;
   const LOBBY_DOOR_ENTRY_RADIUS = 3.2;
   const LOBBY_DOOR_ENTRY_RADIUS_SQ = LOBBY_DOOR_ENTRY_RADIUS * LOBBY_DOOR_ENTRY_RADIUS;
+  const LOBBY_POSTER_ENTRY_RADIUS = 3.5;
+  const LOBBY_POSTER_ENTRY_RADIUS_SQ = LOBBY_POSTER_ENTRY_RADIUS * LOBBY_POSTER_ENTRY_RADIUS;
+  const LOBBY_POSTER_MAX_DATA_URL_LENGTH = 2_800_000;
 
   if (dom.statCapacity) {
     dom.statCapacity.textContent = String(CAPACITY);
@@ -281,6 +284,7 @@
   const hallMap = createHallMap(THREE, scene, ROWS, COLS, isMobile);
   const hallSeatColliders = Array.isArray(hallMap.seatColliders) ? hallMap.seatColliders : [];
   const lobbyPortalWorldPosition = new THREE.Vector3();
+  const lobbyPosterWorldPosition = new THREE.Vector3();
   const playerLayer = new THREE.Group();
   playerLayer.name = "player-layer";
   scene.add(playerLayer);
@@ -376,6 +380,11 @@
   let nicknameGateResolved = false;
   let nicknameGatePromise = null;
   let portalExitUrl = "";
+  let lobbyPosterDataUrl = "";
+  let lobbyPosterTexture = null;
+  let lobbyPosterLoadToken = 0;
+  let lobbyPosterUploading = false;
+  let lobbyPosterFileInput = null;
 
   dom.portalActionBtn.addEventListener("click", () => handleLobbyInteract());
   if (dom.showStartBtn) {
@@ -430,6 +439,11 @@
     }
 
     if (event.repeat) return;
+
+    if (key === "e" && tryOpenLobbyPosterPickerByKey()) {
+      event.preventDefault();
+      return;
+    }
 
     if (key === " " || key === "space" || key === "spacebar" || code === "space") {
       event.preventDefault();
@@ -1085,6 +1099,185 @@
     const dz = position.z - LOBBY_BOUNDS.closedDoorBarrierZ;
     return dx * dx + dz * dz <= LOBBY_DOOR_ENTRY_RADIUS_SQ;
   }
+
+  function isNearLobbyPoster(position = camera.position) {
+    if (!lobbyMap.posterSurface || typeof lobbyMap.posterSurface.getWorldPosition !== "function") {
+      return false;
+    }
+    lobbyMap.posterSurface.getWorldPosition(lobbyPosterWorldPosition);
+    const dx = position.x - lobbyPosterWorldPosition.x;
+    const dz = position.z - lobbyPosterWorldPosition.z;
+    return dx * dx + dz * dz <= LOBBY_POSTER_ENTRY_RADIUS_SQ;
+  }
+
+  function ensureLobbyPosterFileInput() {
+    if (lobbyPosterFileInput) return lobbyPosterFileInput;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg";
+    input.style.display = "none";
+    input.addEventListener("change", async () => {
+      const file = input.files && input.files[0] ? input.files[0] : null;
+      input.value = "";
+      if (!file) return;
+      if (!isHostClient || activeMap !== "lobby") {
+        appendChatLine("시스템", "호스트만 로비 광고판을 변경할 수 있습니다.", "system");
+        return;
+      }
+      if (lobbyPosterUploading) {
+        return;
+      }
+      lobbyPosterUploading = true;
+      updateQueueUi("광고판 이미지 처리 중...");
+      try {
+        const dataUrl = await prepareLobbyPosterDataUrl(file);
+        applyLobbyPosterData(dataUrl, { broadcast: socketConnected && isHostClient });
+        appendChatLine("시스템", "로비 광고판 이미지가 적용되었습니다.", "system");
+        updateQueueUi("광고판 이미지 적용 완료");
+      } catch (error) {
+        const message = String(error && error.message ? error.message : "광고판 이미지 적용에 실패했습니다.");
+        appendChatLine("시스템", message, "system");
+        updateQueueUi(message);
+      } finally {
+        lobbyPosterUploading = false;
+      }
+    });
+    document.body.appendChild(input);
+    lobbyPosterFileInput = input;
+    return input;
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("이미지 파일을 읽지 못했습니다."));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function loadImageFromDataUrl(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("이미지 디코딩에 실패했습니다."));
+      image.src = dataUrl;
+    });
+  }
+
+  async function prepareLobbyPosterDataUrl(file) {
+    const fileType = String(file && file.type ? file.type : "").toLowerCase();
+    if (fileType !== "image/jpeg" && fileType !== "image/png") {
+      throw new Error("JPG 또는 PNG 파일만 업로드할 수 있습니다.");
+    }
+
+    const sourceDataUrl = await readFileAsDataUrl(file);
+    const image = await loadImageFromDataUrl(sourceDataUrl);
+    const maxDim = 1600;
+    const baseWidth = Math.max(1, Math.round(image.naturalWidth || image.width || 1));
+    const baseHeight = Math.max(1, Math.round(image.naturalHeight || image.height || 1));
+    let scale = Math.min(1, maxDim / Math.max(baseWidth, baseHeight));
+    let quality = 0.88;
+
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("이미지 캔버스 초기화에 실패했습니다.");
+    }
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const width = Math.max(1, Math.round(baseWidth * scale));
+      const height = Math.max(1, Math.round(baseHeight * scale));
+      canvas.width = width;
+      canvas.height = height;
+      context.clearRect(0, 0, width, height);
+      context.fillStyle = "#0b1524";
+      context.fillRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+      const outputDataUrl = canvas.toDataURL("image/jpeg", quality);
+      if (outputDataUrl.length <= LOBBY_POSTER_MAX_DATA_URL_LENGTH) {
+        return outputDataUrl;
+      }
+
+      if (quality > 0.62) {
+        quality -= 0.1;
+      } else {
+        scale *= 0.8;
+      }
+    }
+
+    throw new Error("이미지가 너무 큽니다. 더 작은 JPG/PNG 이미지를 업로드하세요.");
+  }
+
+  function disposeLobbyPosterTexture() {
+    if (!lobbyPosterTexture) return;
+    if (typeof lobbyPosterTexture.dispose === "function") {
+      lobbyPosterTexture.dispose();
+    }
+    lobbyPosterTexture = null;
+  }
+
+  function applyLobbyPosterData(dataUrl, options = {}) {
+    const { broadcast = false } = options;
+    if (!lobbyMap.posterSurface || !lobbyMap.posterMaterial) return;
+    const safeDataUrl = String(dataUrl || "").trim();
+    if (!safeDataUrl) return;
+
+    lobbyPosterDataUrl = safeDataUrl;
+    const loadToken = ++lobbyPosterLoadToken;
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      safeDataUrl,
+      (texture) => {
+        if (loadToken !== lobbyPosterLoadToken) {
+          texture.dispose();
+          return;
+        }
+        disposeLobbyPosterTexture();
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
+        texture.encoding = THREE.sRGBEncoding;
+        lobbyPosterTexture = texture;
+        lobbyMap.posterMaterial.map = texture;
+        lobbyMap.posterMaterial.color.setHex(0xffffff);
+        lobbyMap.posterMaterial.needsUpdate = true;
+      },
+      undefined,
+      () => {
+        appendChatLine("시스템", "광고판 이미지 적용에 실패했습니다.", "system");
+      }
+    );
+
+    if (broadcast && socketConnected && socket && isHostClient) {
+      socket.emit("lobby:poster:set", { dataUrl: safeDataUrl, ts: Date.now() });
+    }
+  }
+
+  function applyLobbyPosterFromPayload(posterPayload) {
+    if (!posterPayload || typeof posterPayload !== "object") return;
+    const dataUrl = String(posterPayload.dataUrl || "").trim();
+    if (!dataUrl) return;
+    if (dataUrl === lobbyPosterDataUrl && lobbyPosterTexture) return;
+    applyLobbyPosterData(dataUrl, { broadcast: false });
+  }
+
+  function tryOpenLobbyPosterPickerByKey() {
+    if (!isHostClient || activeMap !== "lobby" || !firstPersonEnabled || transitionInFlight) {
+      return false;
+    }
+    if (!isNearLobbyPoster()) {
+      return false;
+    }
+    if (lobbyPosterUploading) {
+      return true;
+    }
+    const input = ensureLobbyPosterFileInput();
+    input.value = "";
+    input.click();
+    return true;
+  }
+
   function updatePortalUiCopy(forceMapHint = false) {
     if (activeMap !== "lobby") {
       if (forceMapHint && dom.statusIntent) {
@@ -1099,11 +1292,14 @@
 
     const summary = getPortalPhaseSummary();
     const nearPortal = isNearLobbyPortal();
+    const nearPoster = isNearLobbyPoster();
     const exitUrl = buildPortalExitUrl();
 
     if (dom.statusIntent) {
       const nearDoor = isNearLobbyDoor();
-      if (nearPortal) {
+      if (nearPoster && isHostClient && firstPersonEnabled) {
+        dom.statusIntent.textContent = "벽 광고판 앞입니다. E 키로 JPG/PNG 이미지를 업로드할 수 있습니다.";
+      } else if (nearPortal) {
         dom.statusIntent.textContent = exitUrl
           ? "\uD3EC\uD0C8 \uADFC\uCC98\uC785\uB2C8\uB2E4. \uD3EC\uD0C8\uC5D0 \uC811\uCD09\uD558\uBA74 \uB2E4\uC74C \uB9C1\uD06C\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4."
           : "\uD3EC\uD0C8 \uB9C1\uD06C\uAC00 \uC544\uC9C1 \uC124\uC815\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
@@ -1117,9 +1313,13 @@
     }
 
     if (dom.portalPhaseNote) {
-      dom.portalPhaseNote.textContent = nearPortal
-        ? (exitUrl ? "\uD3EC\uD0C8 \uC774\uB3D9 \uAC00\uB2A5" : "\uD3EC\uD0C8 \uB9C1\uD06C \uBBF8\uC124\uC815")
-        : summary;
+      if (nearPoster && isHostClient && firstPersonEnabled) {
+        dom.portalPhaseNote.textContent = "광고판 편집 가능 (E)";
+      } else {
+        dom.portalPhaseNote.textContent = nearPortal
+          ? (exitUrl ? "\uD3EC\uD0C8 \uC774\uB3D9 \uAC00\uB2A5" : "\uD3EC\uD0C8 \uB9C1\uD06C \uBBF8\uC124\uC815")
+          : summary;
+      }
     }
 
     updateDoorUi();
@@ -3264,6 +3464,9 @@ function setupRealtime() {
       if (payload && payload.fxState) {
         applyFxState(payload.fxState, { broadcast: false, fromNetwork: true });
       }
+      if (payload && payload.lobbyPoster) {
+        applyLobbyPosterFromPayload(payload.lobbyPoster);
+      }
       const joinedRoomId = payload && payload.roomId ? payload.roomId : networkRoomId;
       const hostAssigned = payload && payload.hostId ? (payload.hostId === selfSocketId ? "내가 호스트" : "호스트 배정됨") : "호스트 없음";
       appendChatLine("시스템", `룸 입장 완료: ${joinedRoomId} | ${hostAssigned}`, "system");
@@ -3283,6 +3486,9 @@ function setupRealtime() {
       }
       if (payload && payload.fxState) {
         applyFxState(payload.fxState, { broadcast: false, fromNetwork: true });
+      }
+      if (payload && payload.lobbyPoster) {
+        applyLobbyPosterFromPayload(payload.lobbyPoster);
       }
     });
 
@@ -3356,6 +3562,11 @@ function setupRealtime() {
       if (senderId && senderId !== "system" && senderId !== selfSocketId) {
         showRemoteChatBubble(senderId, text);
       }
+    });
+
+    socket.on("lobby:poster", (payload) => {
+      const poster = payload && payload.poster ? payload.poster : payload;
+      applyLobbyPosterFromPayload(poster);
     });
 
     socket.on("room:error", (payload) => {
@@ -3807,6 +4018,27 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     rightWall.position.x = 14;
     group.add(leftWall, rightWall);
 
+    const posterFrame = new THREERef.Mesh(
+      new THREERef.BoxGeometry(0.16, 3.72, 6.34),
+      new THREERef.MeshStandardMaterial({ color: 0x1f2f47, roughness: 0.38, metalness: 0.22 })
+    );
+    posterFrame.position.set(13.48, 3.12, 14.0);
+    posterFrame.castShadow = true;
+    posterFrame.receiveShadow = true;
+    group.add(posterFrame);
+
+    const posterMaterial = new THREERef.MeshStandardMaterial({
+      color: 0x22374f,
+      emissive: 0x101c2a,
+      emissiveIntensity: 0.22,
+      roughness: 0.42,
+      metalness: 0.08
+    });
+    const posterSurface = new THREERef.Mesh(new THREERef.PlaneGeometry(5.9, 3.28), posterMaterial);
+    posterSurface.position.set(13.37, 3.12, 14.0);
+    posterSurface.rotation.y = -Math.PI / 2;
+    group.add(posterSurface);
+
     const corridorWallLeft = new THREERef.Mesh(new THREERef.BoxGeometry(0.65, 8, 22), wallMat);
     corridorWallLeft.position.set(-4.2, 4, 34);
     const corridorWallRight = corridorWallLeft.clone();
@@ -3928,7 +4160,20 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     group.add(portalGroup);
 
     targetScene.add(group);
-    return { group, portalGroup, portalRing, portalCore, portalGlow, corridorStrips, doorLeft, doorRight, doorGlow };
+    return {
+      group,
+      portalGroup,
+      portalRing,
+      portalCore,
+      portalGlow,
+      corridorStrips,
+      doorLeft,
+      doorRight,
+      doorGlow,
+      posterFrame,
+      posterSurface,
+      posterMaterial
+    };
   }
 
   function createHallMap(THREERef, targetScene, rows, cols, mobile) {

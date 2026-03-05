@@ -1,5 +1,6 @@
 const path = require("path");
 const http = require("http");
+const fs = require("fs");
 const express = require("express");
 const { Server } = require("socket.io");
 
@@ -11,11 +12,63 @@ const PLAYER_STATE_MIN_INTERVAL_MS = 50;
 const SNAPSHOT_INTERVAL_MS = 100;
 const CLIP_ID_MIN = 1;
 const CLIP_ID_MAX = 10;
+const LOBBY_POSTER_MAX_DATA_URL_LENGTH = 2_800_000;
 const SPECIAL_PERFORMER_ACTION_IDS = new Set(["walk_in", "idle_hold", "greet", "walk_out"]);
 
 const app = express();
 const rootDir = __dirname;
 const staticRoot = rootDir;
+const posterStorePath = path.join(rootDir, "data", "lobby-posters.json");
+
+function sanitizePosterDataUrl(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (value.length > LOBBY_POSTER_MAX_DATA_URL_LENGTH) return "";
+  if (!/^data:image\/(?:png|jpeg);base64,[a-z0-9+/=]+$/i.test(value)) return "";
+  return value;
+}
+
+function sanitizePosterState(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const dataUrl = sanitizePosterDataUrl(raw.dataUrl);
+  if (!dataUrl) return null;
+  return {
+    dataUrl,
+    updatedAt: Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : 0,
+    by: raw.by ? String(raw.by) : null
+  };
+}
+
+function loadPosterStore() {
+  try {
+    if (!fs.existsSync(posterStorePath)) return {};
+    const parsed = JSON.parse(fs.readFileSync(posterStorePath, "utf8"));
+    if (!parsed || typeof parsed !== "object") return {};
+
+    const normalized = {};
+    Object.entries(parsed).forEach(([roomId, state]) => {
+      const safeRoomId = sanitizeRoomId(roomId);
+      const safeState = sanitizePosterState(state);
+      if (safeRoomId && safeState) {
+        normalized[safeRoomId] = safeState;
+      }
+    });
+    return normalized;
+  } catch (_error) {
+    return {};
+  }
+}
+
+function persistPosterStore(store) {
+  try {
+    fs.mkdirSync(path.dirname(posterStorePath), { recursive: true });
+    fs.writeFileSync(posterStorePath, JSON.stringify(store, null, 2), "utf8");
+  } catch (_error) {
+    // best-effort persistence
+  }
+}
+
+const lobbyPosterStore = loadPosterStore();
 
 const allowedOrigins = Array.from(
   new Set(
@@ -121,6 +174,7 @@ app.get("/healthz", (_req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, {
   transports: ["websocket", "polling"],
+  maxHttpBufferSize: 6 * 1024 * 1024,
   cors: {
     origin: true,
     credentials: true
@@ -239,6 +293,7 @@ function round3(value) {
 function makeRoomIfNeeded(roomId) {
   const current = rooms.get(roomId);
   if (current) return current;
+  const savedPoster = sanitizePosterState(lobbyPosterStore[roomId]) || null;
   const room = {
     roomId,
     key: `performance:${roomId}`,
@@ -255,7 +310,8 @@ function makeRoomIfNeeded(roomId) {
     fxState: {
       particles: true,
       lights: true
-    }
+    },
+    lobbyPoster: savedPoster
   };
   rooms.set(roomId, room);
   return room;
@@ -283,6 +339,7 @@ function buildSnapshot(room) {
     showState: room.showState,
     doorOpen: room.doorOpen,
     fxState: room.fxState,
+    lobbyPoster: room.lobbyPoster || null,
     players: Array.from(room.players.values()).map((p) => serializePlayer(p)),
     serverNow: Date.now()
   };
@@ -409,6 +466,7 @@ function handleJoin(socket, payload) {
     showState: room.showState,
     doorOpen: room.doorOpen,
     fxState: room.fxState,
+    lobbyPoster: room.lobbyPoster || null,
     players: Array.from(room.players.values()).map((p) => serializePlayer(p)),
     capacity: MAX_ROOM_SIZE,
     requestedRole: player.wantsHost ? "host" : "player",
@@ -695,6 +753,53 @@ function handleShowStop(socket) {
   });
 }
 
+function handleLobbyPosterSet(socket, payload) {
+  const roomId = socketToRoom.get(socket.id);
+  if (!roomId) return;
+
+  const room = rooms.get(roomId);
+  const player = room?.players.get(socket.id);
+  if (!room || !player) return;
+
+  if (room.hostId !== socket.id) {
+    socket.emit("room:error", {
+      code: "HOST_ONLY",
+      message: "호스트만 로비 광고판을 변경할 수 있습니다.",
+      ts: Date.now()
+    });
+    return;
+  }
+
+  const dataUrl = sanitizePosterDataUrl(payload?.dataUrl);
+  if (!dataUrl) {
+    socket.emit("room:error", {
+      code: "INVALID_POSTER",
+      message: "JPG/PNG 이미지(용량 제한)를 업로드하세요.",
+      ts: Date.now()
+    });
+    return;
+  }
+
+  if (room.lobbyPoster && room.lobbyPoster.dataUrl === dataUrl) {
+    return;
+  }
+
+  room.lobbyPoster = {
+    dataUrl,
+    updatedAt: Date.now(),
+    by: socket.id
+  };
+  lobbyPosterStore[room.roomId] = room.lobbyPoster;
+  persistPosterStore(lobbyPosterStore);
+
+  io.to(room.key).emit("lobby:poster", {
+    roomId: room.roomId,
+    poster: room.lobbyPoster,
+    ts: Date.now()
+  });
+  emitSnapshot(room);
+}
+
 io.on("connection", (socket) => {
   socket.on("room:join", (payload) => handleJoin(socket, payload));
   socket.on("room:leave", () => leaveCurrentRoom(socket));
@@ -705,6 +810,7 @@ io.on("connection", (socket) => {
   socket.on("fx:set", (payload) => handleFxSet(socket, payload));
   socket.on("show:stop", () => handleShowStop(socket));
   socket.on("performer:clip", (payload) => handlePerformerClip(socket, payload));
+  socket.on("lobby:poster:set", (payload) => handleLobbyPosterSet(socket, payload));
 
   socket.on("disconnect", () => {
     leaveCurrentRoom(socket);
