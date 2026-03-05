@@ -435,6 +435,7 @@
   let currentClipId = DEFAULT_CLIP_ID;
   let currentPerformerActionId = DEFAULT_PERFORMER_ACTION_ID;
   let performerActionRuntime = null;
+  let performerHiddenAfterWalkOut = false;
   let queueEvents = [];
   let queuePlayIndex = 0;
   let queueRecording = false;
@@ -610,6 +611,10 @@
   if (dom.fxParticlesBtn) {
     dom.fxParticlesBtn.addEventListener("click", () => {
       if (!canControlShowOps()) return;
+      if (activeMap !== "hall") {
+        updateQueueUi("파티클은 공연장에서만 켜고 끌 수 있습니다.");
+        return;
+      }
       applyFxState({ particles: !fxParticlesEnabled });
     });
   }
@@ -1794,7 +1799,7 @@ function updateFxButtons() {
     if (dom.fxParticlesBtn) {
       dom.fxParticlesBtn.classList.toggle("active", fxParticlesEnabled);
       dom.fxParticlesBtn.textContent = fxParticlesEnabled ? "\ud30c\ud2f0\ud074 \ub044\uae30" : "\ud30c\ud2f0\ud074 \ucf1c\uae30";
-      dom.fxParticlesBtn.disabled = !canControl;
+      dom.fxParticlesBtn.disabled = !canControl || !hallOnly;
     }
 
     if (dom.fxLightsBtn) {
@@ -2019,10 +2024,19 @@ function applyQuality() {
     });
 
     bg.addEventListener("ended", () => {
-      if (queuePlaying && queueLoop && queueEvents.length > 0) {
-        queuePlayIndex = 0;
+      if (queueLoop) {
+        if (socketConnected && !isHostClient) {
+          pendingShowStartFromHost = true;
+          showPlaying = true;
+          updateShowStartButton();
+          updateQueueUi("호스트 재시작 신호 대기 중...");
+          return;
+        }
+        if (queuePlaying && queueEvents.length > 0) {
+          queuePlayIndex = 0;
+        }
         startShow({ broadcast: socketConnected && isHostClient, allowNonHost: true });
-        updateQueueUi("\uB8E8\uD504 \uC7AC\uC0DD \uC2DC\uC791");
+        updateQueueUi("루프 재생 시작");
         return;
       }
 
@@ -2124,10 +2138,7 @@ function applyQuality() {
       chromaVideo.pause();
       chromaVideo.currentTime = 0;
     }
-    if (hallMap.performerPlane) {
-      hallMap.performerPlane.visible = false;
-    }
-    resetPerformerRuntime();
+    showPerformerIdleStandPose();
 
     queuePlaying = false;
     queuePlayIndex = 0;
@@ -2220,9 +2231,6 @@ function applyQuality() {
       chromaVideo.pause();
       chromaVideo.currentTime = 0;
     }
-    if (hallMap.performerPlane) {
-      hallMap.performerPlane.visible = false;
-    }
     resetPerformerRuntime();
     if (queuePlaying) {
       queuePlayIndex = 0;
@@ -2262,7 +2270,7 @@ function applyQuality() {
         chromaVideo.pause();
       }
       if (hallMap.performerPlane) {
-        hallMap.performerPlane.visible = false;
+        hallMap.performerPlane.visible = !performerHiddenAfterWalkOut;
       }
       resetPerformerRuntime();
       updateQueueUi();
@@ -2496,6 +2504,55 @@ function applyQuality() {
     applyPerformerTransform(PERFORMER_BASE_POSITION.x, false);
   }
 
+  function showPerformerIdleStandPose() {
+    if (performerHiddenAfterWalkOut) {
+      if (hallMap.performerPlane) {
+        hallMap.performerPlane.visible = false;
+      }
+      performerActionRuntime = null;
+      return;
+    }
+
+    if (hallMap.performerPlane) {
+      hallMap.performerPlane.visible = true;
+    }
+
+    const idleConfig = getPerformerActionConfig("idle_hold");
+    const holdX = idleConfig && Number.isFinite(idleConfig.holdX)
+      ? idleConfig.holdX
+      : PERFORMER_BASE_POSITION.x;
+    const mirrorX = Boolean(idleConfig && idleConfig.mirrorX);
+    applyPerformerTransform(holdX, mirrorX);
+    performerActionRuntime = null;
+
+    if (!chromaVideo || !chromaVideoReady || !idleConfig || !idleConfig.src) {
+      return;
+    }
+
+    const currentSrc = String(chromaVideo.getAttribute("src") || "");
+    if (currentSrc !== idleConfig.src) {
+      chromaVideo.pause();
+      chromaVideo.setAttribute("src", idleConfig.src);
+      chromaVideo.load();
+    }
+    chromaVideo.loop = false;
+
+    if (Number.isFinite(idleConfig.freezeAt)) {
+      seekAndFreezeChroma(idleConfig.freezeAt);
+      return;
+    }
+
+    const idleStart = Math.max(0, Number(idleConfig.startTime) || 0);
+    if (chromaVideo.readyState >= 1) {
+      chromaVideo.currentTime = idleStart;
+    } else {
+      chromaVideo.addEventListener("loadedmetadata", () => {
+        chromaVideo.currentTime = idleStart;
+      }, { once: true });
+    }
+    chromaVideo.pause();
+  }
+
   function updatePerformerRuntime(nowSeconds) {
     if (!performerActionRuntime || !hallMap.performerPlane || !hallMap.performerPlane.visible) {
       return;
@@ -2519,6 +2576,11 @@ function applyQuality() {
         if (runtime.loop && runtime.stopLoopAtMoveEnd && chromaVideo) {
           chromaVideo.loop = false;
           chromaVideo.pause();
+        }
+        if (runtime.id === "walk_out" && hallMap.performerPlane) {
+          performerHiddenAfterWalkOut = true;
+          hallMap.performerPlane.visible = false;
+          performerActionRuntime = null;
         }
       }
     }
@@ -2631,6 +2693,17 @@ function applyQuality() {
     const config = getPerformerActionConfig(actionId);
     if (!config || !config.src) {
       return;
+    }
+
+    const isWalkInAction = config.id === "walk_in";
+    if (performerHiddenAfterWalkOut && !isWalkInAction) {
+      if (!silent) {
+        updateQueueUi("퇴장 상태입니다. 0-0 Walk In 버튼으로 다시 입장시키세요.");
+      }
+      return;
+    }
+    if (isWalkInAction) {
+      performerHiddenAfterWalkOut = false;
     }
 
     if (!chromaVideo || !chromaVideoReady) {
