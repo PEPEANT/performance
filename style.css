@@ -948,6 +948,15 @@ body.is-mobile-ui #mobile-ui {
   display: flex;
 }
 
+body.mobile-simple-ui #overlay {
+  display: none;
+}
+
+body.mobile-simple-ui #hud,
+body.mobile-simple-ui #hud-ui {
+  display: none !important;
+}
+
 @media (max-width: 640px) {
   #mobile-ui {
     left: 8px;

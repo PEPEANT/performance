@@ -185,9 +185,19 @@
 
   const THREE = window.THREE;
   const userAgent = String(navigator.userAgent || "").toLowerCase();
+  const mobileQueryRaw = String(query.get("mobile") || "").trim().toLowerCase();
+  const forceMobileUi = ["1", "true", "yes", "on"].includes(mobileQueryRaw);
+  const forceDesktopUi = ["0", "false", "no", "off"].includes(mobileQueryRaw);
   const hasCoarsePointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
-  const isNarrowViewport = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches;
-  const isMobile = /android|iphone|ipad|ipod|mobile|tablet/i.test(userAgent) || (hasCoarsePointer && isNarrowViewport);
+  const hasAnyCoarsePointer = typeof window.matchMedia === "function" && window.matchMedia("(any-pointer: coarse)").matches;
+  const touchPoints = Number(navigator.maxTouchPoints || 0);
+  const hasTouchSupport = touchPoints > 0 || ("ontouchstart" in window);
+  const shortEdge = Math.min(window.innerWidth || 0, window.innerHeight || 0);
+  const longEdge = Math.max(window.innerWidth || 0, window.innerHeight || 0);
+  const likelyHandheldScreen = shortEdge <= 1024 && longEdge <= 1800;
+  const mobileUa = /android|iphone|ipad|ipod|mobile|tablet/i.test(userAgent);
+  const touchLikelyMobile = (hasTouchSupport || hasCoarsePointer || hasAnyCoarsePointer) && likelyHandheldScreen;
+  const isMobile = forceMobileUi || (!forceDesktopUi && (mobileUa || touchLikelyMobile));
   const networkInfo = navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
   const networkEffectiveType = String(networkInfo && networkInfo.effectiveType ? networkInfo.effectiveType : "").toLowerCase();
   const prefersReducedData = Boolean(networkInfo && networkInfo.saveData);
@@ -730,6 +740,7 @@
     }
 
     document.body.classList.add("is-mobile-ui");
+    document.body.classList.add("mobile-simple-ui");
     if (dom.mobileUi) {
       dom.mobileUi.classList.remove("hidden");
     }
