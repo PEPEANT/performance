@@ -377,9 +377,16 @@
     playerPitch -= dy * PLAYER_LOOK_SENSITIVITY;
     playerPitch = THREE.MathUtils.clamp(playerPitch, -1.45, 1.45);
   });
-
   dom.presetButtons.forEach((button) => {
-    button.addEventListener("click", () => applyPreset(button.dataset.preset, false));
+    button.addEventListener("click", () => {
+      const presetName = String(button.dataset.preset || "");
+      const preset = presets[presetName];
+      if (!preset) return;
+      if (preset.map !== activeMap) {
+        setMap(preset.map, true);
+      }
+      applyPreset(presetName, false);
+    });
   });
 
   if (dom.fxParticlesBtn) {
@@ -832,14 +839,11 @@
       presetName: name
     };
   }
-
   function updatePresetButtons() {
     dom.presetButtons.forEach((button) => {
-      const scope = String(button.dataset.mapScope || "").toLowerCase();
       const name = String(button.dataset.preset || "");
-      const visible = scope === activeMap;
-      button.classList.toggle("hidden", !visible);
-      button.classList.toggle("active", visible && name === activePreset);
+      button.classList.remove("hidden");
+      button.classList.toggle("active", name === activePreset);
     });
   }
 
