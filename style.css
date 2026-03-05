@@ -947,6 +947,15 @@ p {
   pointer-events: auto;
 }
 
+#mobile-chat-label {
+  margin: 0;
+  padding-left: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(217, 236, 255, 0.9);
+}
+
 #mobile-move-pad {
   position: relative;
   width: 98px;
@@ -1017,7 +1026,90 @@ body.is-mobile-ui #mobile-ui {
 }
 
 body.mobile-simple-ui #overlay {
+  display: grid;
+  top: 0;
+  right: 0;
+  left: auto;
+  bottom: auto;
+  width: auto;
+  z-index: 72;
+}
+
+body.mobile-simple-ui .panel-controls {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+body.mobile-simple-ui #host-section-network {
+  margin: 0;
+  border: none;
+  background: transparent;
+  overflow: visible;
+}
+
+body.mobile-simple-ui #host-section-network > summary {
   display: none;
+}
+
+body.mobile-simple-ui #network-panel-toggle-btn {
+  position: fixed;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  margin: 0;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  z-index: 74;
+}
+
+body.mobile-simple-ui #network-panel {
+  position: fixed;
+  top: calc(max(8px, env(safe-area-inset-top)) + 48px);
+  right: max(8px, env(safe-area-inset-right));
+  width: min(320px, calc(100vw - 16px));
+  max-height: calc(100vh - 70px);
+  margin: 0;
+  overflow: auto;
+  pointer-events: auto;
+  z-index: 73;
+}
+
+body.is-mobile-ui #chat-ui {
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: auto;
+  max-height: none;
+  border-radius: 0;
+  padding: 10px 10px calc(92px + env(safe-area-inset-bottom));
+  z-index: 70;
+  grid-template-rows: 1fr auto;
+}
+
+body.is-mobile-ui #chat-ui.collapsed {
+  display: none;
+}
+
+body.is-mobile-ui #chat-header {
+  display: none;
+}
+
+body.is-mobile-ui #chat-log {
+  min-height: 0;
+  height: 100%;
 }
 
 body.mobile-simple-ui #hud,

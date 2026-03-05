@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const CAPACITY = 50;
   const ROWS = 5;
   const COLS = 10;
@@ -814,9 +814,9 @@
 
     if (dom.networkPanelToggleBtn) {
       dom.networkPanelToggleBtn.classList.toggle("active", networkPanelExpanded);
-      dom.networkPanelToggleBtn.textContent = networkPanelExpanded
-        ? "온라인 접속 패널 닫기"
-        : "온라인 접속 패널 열기";
+      dom.networkPanelToggleBtn.textContent = "\u2699";
+      dom.networkPanelToggleBtn.setAttribute("aria-label", networkPanelExpanded ? "옵션 닫기" : "옵션 열기");
+      dom.networkPanelToggleBtn.title = networkPanelExpanded ? "옵션 닫기" : "옵션 열기";
       dom.networkPanelToggleBtn.setAttribute("aria-expanded", String(networkPanelExpanded));
     }
   }
@@ -1009,8 +1009,8 @@
       mobileLookLastX = touch.clientX;
       mobileLookLastY = touch.clientY;
 
-      playerYaw -= dx * PLAYER_LOOK_SENSITIVITY * 0.9;
-      playerPitch -= dy * PLAYER_LOOK_SENSITIVITY * 0.9;
+      playerYaw -= dx * PLAYER_LOOK_SENSITIVITY * 1.7;
+      playerPitch -= dy * PLAYER_LOOK_SENSITIVITY * 1.7;
       playerPitch = THREE.MathUtils.clamp(playerPitch, -1.45, 1.45);
     }, { passive: true });
 
@@ -3159,7 +3159,7 @@ function clampNumber(value, min, max) {
     if (dom.hostSections && dom.hostSections.length) {
       dom.hostSections.forEach((section) => {
         const sectionId = String(section?.id || "");
-        const keepVisible = sectionId === "host-section-network" && !isMobile;
+        const keepVisible = sectionId === "host-section-network";
         setElementHidden(section, hideOptionalUi && !keepVisible);
       });
     }
