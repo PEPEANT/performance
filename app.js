@@ -223,8 +223,8 @@
     closedDoorBarrierZ: 22.2,
     closedDoorHalfGap: 1.75
   });
-  const LOBBY_HALL_AUTO_ENTER_Z = LOBBY_BOUNDS.maxZ - 0.45;
-  const LOBBY_HALL_AUTO_ENTER_HALF_WIDTH = LOBBY_BOUNDS.corridorHalfWidth + 0.4;
+  const LOBBY_HALL_AUTO_ENTER_Z = LOBBY_BOUNDS.maxZ - 2.2;
+  const LOBBY_HALL_AUTO_ENTER_HALF_WIDTH = LOBBY_BOUNDS.corridorHalfWidth + 0.9;
   const LOBBY_PORTAL_ENTRY_RADIUS = 4.8;
   const LOBBY_PORTAL_ENTRY_RADIUS_SQ = LOBBY_PORTAL_ENTRY_RADIUS * LOBBY_PORTAL_ENTRY_RADIUS;
   const LOBBY_DOOR_ENTRY_RADIUS = 3.2;
@@ -325,7 +325,7 @@
   let pointerLocked = false;
   let playerYaw = 0;
   let playerPitch = 0;
-  let chatCollapsed = true;
+  let chatCollapsed = isMobile;
   let networkPanelExpanded = false;
   let mobileMovePointerId = null;
   let mobileMoveRadius = 44;
@@ -773,16 +773,14 @@
     }
 
     if (dom.mobileSprintBtn) {
-      const setJump = (active) => {
-        if (active) {
-          moveState.jump = true;
-        }
+      const setRun = (active) => {
+        moveState.run = Boolean(active);
         dom.mobileSprintBtn.classList.toggle("active", Boolean(active));
       };
-      dom.mobileSprintBtn.addEventListener("pointerdown", () => setJump(true));
-      dom.mobileSprintBtn.addEventListener("pointerup", () => setJump(false));
-      dom.mobileSprintBtn.addEventListener("pointercancel", () => setJump(false));
-      dom.mobileSprintBtn.addEventListener("pointerleave", () => setJump(false));
+      dom.mobileSprintBtn.addEventListener("pointerdown", () => setRun(true));
+      dom.mobileSprintBtn.addEventListener("pointerup", () => setRun(false));
+      dom.mobileSprintBtn.addEventListener("pointercancel", () => setRun(false));
+      dom.mobileSprintBtn.addEventListener("pointerleave", () => setRun(false));
     }
 
     if (dom.mobileChatBtn) {
@@ -2880,7 +2878,7 @@ function setMovementKeyState(key, code, pressed) {
     if (key === "s" || key === "arrowdown" || code === "keys") moveState.backward = pressed;
     if (key === "a" || key === "arrowleft" || code === "keya") moveState.left = pressed;
     if (key === "d" || key === "arrowright" || code === "keyd") moveState.right = pressed;
-    if (key === "shift" || code === "shiftleft" || code === "shiftright") moveState.jump = pressed;
+    if (key === "shift" || code === "shiftleft" || code === "shiftright") moveState.run = pressed;
     if (key === " " || key === "space" || key === "spacebar" || code === "space") moveState.jump = pressed;
   }
 
@@ -2893,7 +2891,7 @@ function setMovementKeyState(key, code, pressed) {
 
     const forwardIntent = (moveState.forward ? 1 : 0) - (moveState.backward ? 1 : 0);
     const strafeIntent = (moveState.right ? 1 : 0) - (moveState.left ? 1 : 0);
-    const speed = PLAYER_MOVE_SPEED;
+    const speed = PLAYER_MOVE_SPEED * (moveState.run ? PLAYER_RUN_MULTIPLIER : 1);
 
     const nextPos = camera.position.clone();
     if (forwardIntent !== 0 || strafeIntent !== 0) {
@@ -3060,6 +3058,7 @@ function upsertRemotePlayer(entry) {
     const entryX = Number(entry.x) || 0;
     const entryZ = Number(entry.z) || 0;
     const entryY = Number(entry.y);
+    const entryIsHost = Boolean(entry.isHost);
     const remoteEyeHeight = PLAYER_EYE_HEIGHT[remoteMap] || 2.2;
     const groundY = getGroundHeightAt(entryX, entryZ, remoteMap);
     const footY = Number.isFinite(entryY)
@@ -3068,7 +3067,7 @@ function upsertRemotePlayer(entry) {
 
     let remote = remotePlayers.get(entry.id);
     if (!remote) {
-      const avatar = createPlayerAvatar(entry.name);
+      const avatar = createPlayerAvatar(entry.name, entryIsHost);
       avatar.position.set(entryX, footY, entryZ);
       avatar.rotation.y = Number(entry.yaw) || 0;
       playerLayer.add(avatar);
@@ -3076,6 +3075,7 @@ function upsertRemotePlayer(entry) {
       remote = {
         id: entry.id,
         map: remoteMap,
+        isHost: entryIsHost,
         mesh: avatar,
         targetPos: new THREE.Vector3(entryX, footY, entryZ),
         targetYaw: Number(entry.yaw) || 0,
@@ -3086,9 +3086,10 @@ function upsertRemotePlayer(entry) {
     }
 
     remote.map = remoteMap;
+    remote.isHost = entryIsHost;
     remote.targetPos.set(entryX, footY, entryZ);
     remote.targetYaw = Number(entry.yaw) || 0;
-    remote.mesh.userData.playerName = String(entry.name || remote.mesh.userData.playerName || "\uD50C\uB808\uC774\uC5B4");
+    updateRemoteAvatarBadge(remote.mesh, entry.name, entryIsHost);
   }
 
 function removeRemotePlayerById(playerId) {
@@ -3326,6 +3327,9 @@ function setupRealtime() {
       const text = String((payload && payload.text) || "");
       const type = senderId === "system" ? "system" : senderId === selfSocketId ? "self" : "remote";
       appendChatLine(senderName, text, type);
+      if (senderId && senderId !== "system" && senderId !== selfSocketId) {
+        showRemoteChatBubble(senderId, text);
+      }
     });
 
     socket.on("room:error", (payload) => {
@@ -3334,7 +3338,136 @@ function setupRealtime() {
     });
   }
 
-function createPlayerAvatar(name) {
+  function drawRoundedRect(ctx, x, y, width, height, radius) {
+    const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + width - r, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+    ctx.lineTo(x + width, y + height - r);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+    ctx.lineTo(x + r, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  function createBillboardTextSprite(initialText, style = {}) {
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
+
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.renderOrder = 24;
+    sprite.userData.canvas = canvas;
+    sprite.userData.context = context;
+    sprite.userData.textStyle = {
+      fontSize: Number(style.fontSize) || 32,
+      fontFamily: String(style.fontFamily || "'Noto Sans KR', 'Malgun Gothic', sans-serif"),
+      paddingX: Number(style.paddingX) || 16,
+      paddingY: Number(style.paddingY) || 8,
+      maxChars: Number(style.maxChars) || 42,
+      textColor: String(style.textColor || "#eaf8ff"),
+      bgColor: String(style.bgColor || "rgba(9, 19, 38, 0.78)"),
+      borderColor: String(style.borderColor || "rgba(136, 214, 255, 0.9)"),
+      borderWidth: Number(style.borderWidth) || 1.4,
+      radius: Number(style.radius) || 10,
+      scale: Number(style.scale) || 0.0088
+    };
+
+    updateBillboardTextSprite(sprite, initialText);
+    return sprite;
+  }
+
+  function updateBillboardTextSprite(sprite, text) {
+    if (!sprite || !sprite.userData || !sprite.userData.context || !sprite.userData.canvas) {
+      return;
+    }
+    const style = sprite.userData.textStyle || {};
+    const safeText = String(text || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, Math.max(4, Number(style.maxChars) || 42));
+
+    if (!safeText) {
+      sprite.visible = false;
+      return;
+    }
+
+    const fontSize = Number(style.fontSize) || 32;
+    const paddingX = Number(style.paddingX) || 16;
+    const paddingY = Number(style.paddingY) || 8;
+    const fontFamily = String(style.fontFamily || "'Noto Sans KR', 'Malgun Gothic', sans-serif");
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const context = sprite.userData.context;
+    const canvas = sprite.userData.canvas;
+
+    context.font = `700 ${fontSize}px ${fontFamily}`;
+    const textWidth = Math.ceil(context.measureText(safeText).width);
+    const logicalWidth = Math.max(56, textWidth + paddingX * 2);
+    const logicalHeight = Math.max(28, fontSize + paddingY * 2);
+
+    canvas.width = Math.ceil(logicalWidth * dpr);
+    canvas.height = Math.ceil(logicalHeight * dpr);
+
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.clearRect(0, 0, logicalWidth, logicalHeight);
+
+    drawRoundedRect(context, 0.7, 0.7, logicalWidth - 1.4, logicalHeight - 1.4, Number(style.radius) || 10);
+    context.fillStyle = String(style.bgColor || "rgba(9, 19, 38, 0.78)");
+    context.fill();
+    context.lineWidth = Number(style.borderWidth) || 1.4;
+    context.strokeStyle = String(style.borderColor || "rgba(136, 214, 255, 0.9)");
+    context.stroke();
+
+    context.font = `700 ${fontSize}px ${fontFamily}`;
+    context.fillStyle = String(style.textColor || "#eaf8ff");
+    context.textBaseline = "middle";
+    context.fillText(safeText, paddingX, logicalHeight * 0.5);
+
+    if (sprite.material && sprite.material.map) {
+      sprite.material.map.needsUpdate = true;
+    }
+    const scale = Number(style.scale) || 0.0088;
+    sprite.scale.set(logicalWidth * scale, logicalHeight * scale, 1);
+    sprite.visible = true;
+  }
+
+  function updateRemoteAvatarBadge(avatar, playerName, isHost) {
+    if (!avatar || !avatar.userData) return;
+    const roleLabel = isHost ? "호스트" : "게스트";
+    const safeName = sanitizePlayerName(playerName) || "플레이어";
+    avatar.userData.playerName = safeName;
+    avatar.userData.playerRole = roleLabel;
+    const badgeText = `${roleLabel} | ${safeName}`;
+    updateBillboardTextSprite(avatar.userData.badgeSprite, badgeText);
+  }
+
+  function showRemoteChatBubble(playerId, message) {
+    const remote = remotePlayers.get(playerId);
+    if (!remote || !remote.mesh || !remote.mesh.userData) return;
+    const text = sanitizeChatText(message);
+    if (!text) return;
+
+    const chatSprite = remote.mesh.userData.chatSprite;
+    if (!chatSprite) return;
+
+    updateBillboardTextSprite(chatSprite, text);
+    remote.mesh.userData.chatUntil = performance.now() + 4600;
+    chatSprite.visible = true;
+  }
+
+function createPlayerAvatar(name, isHost) {
     const avatar = new THREE.Group();
 
     const bodyGeometry =
@@ -3365,20 +3498,38 @@ function createPlayerAvatar(name) {
     );
     head.position.y = 1.62;
 
-    const badge = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.96, 0.2),
-      new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.75, side: THREE.DoubleSide })
-    );
-    badge.position.set(0, 2.07, 0);
+    const badgeSprite = createBillboardTextSprite(" ", {
+      fontSize: 30,
+      paddingX: 14,
+      paddingY: 8,
+      maxChars: 32,
+      textColor: "#ecfbff",
+      bgColor: "rgba(9, 26, 44, 0.78)",
+      borderColor: "rgba(146, 216, 255, 0.92)",
+      scale: 0.0082
+    });
+    badgeSprite.position.set(0, 2.1, 0);
 
-    const icon = new THREE.Mesh(
-      new THREE.BoxGeometry(0.07, 0.07, 0.07),
-      new THREE.MeshBasicMaterial({ color: 0x9fd8ff })
-    );
-    icon.position.set(0, 2.07, 0.06);
+    const chatSprite = createBillboardTextSprite(" ", {
+      fontSize: 28,
+      paddingX: 12,
+      paddingY: 8,
+      maxChars: 36,
+      textColor: "#fff8e9",
+      bgColor: "rgba(30, 12, 5, 0.82)",
+      borderColor: "rgba(255, 196, 134, 0.95)",
+      scale: 0.0078
+    });
+    chatSprite.position.set(0, 2.42, 0);
+    chatSprite.visible = false;
 
     avatar.userData.playerName = String(name || "\uC774\uB984 \uC5C6\uC74C");
-    avatar.add(body, head, badge, icon);
+    avatar.userData.playerRole = isHost ? "호스트" : "게스트";
+    avatar.userData.badgeSprite = badgeSprite;
+    avatar.userData.chatSprite = chatSprite;
+    avatar.userData.chatUntil = 0;
+    avatar.add(body, head, badgeSprite, chatSprite);
+    updateRemoteAvatarBadge(avatar, name, isHost);
     return avatar;
   }
 
@@ -3398,12 +3549,19 @@ function updateRemotePlayers(elapsed, delta) {
     }
 
     remoteUpdateAccumulator = 0;
+    const now = performance.now();
     tempBillboardTarget.set(camera.position.x, 2, camera.position.z);
 
     remotePlayers.forEach((remote) => {
       remote.inActiveMap = remote.map === activeMap;
       if (!remote.inActiveMap) {
         remote.mesh.visible = false;
+        if (remote.mesh.userData.badgeSprite) {
+          remote.mesh.userData.badgeSprite.visible = false;
+        }
+        if (remote.mesh.userData.chatSprite) {
+          remote.mesh.userData.chatSprite.visible = false;
+        }
         return;
       }
 
@@ -3417,15 +3575,30 @@ function updateRemotePlayers(elapsed, delta) {
       const distanceSq = camera.position.distanceToSquared(remote.mesh.position);
       if (distanceSq > REMOTE_CULL_DISTANCE_SQ) {
         remote.mesh.visible = false;
+        if (remote.mesh.userData.badgeSprite) {
+          remote.mesh.userData.badgeSprite.visible = false;
+        }
+        if (remote.mesh.userData.chatSprite) {
+          remote.mesh.userData.chatSprite.visible = false;
+        }
         return;
       }
 
       remote.mesh.visible = true;
-      const badge = remote.mesh.children[2];
+      const badge = remote.mesh.userData.badgeSprite;
       if (badge) {
         badge.visible = distanceSq <= REMOTE_BADGE_DISTANCE_SQ;
         if (badge.visible) {
           badge.lookAt(tempBillboardTarget);
+        }
+      }
+
+      const chatSprite = remote.mesh.userData.chatSprite;
+      if (chatSprite) {
+        const chatActive = Number(remote.mesh.userData.chatUntil) > now;
+        chatSprite.visible = chatActive && distanceSq <= REMOTE_BADGE_DISTANCE_SQ;
+        if (chatSprite.visible) {
+          chatSprite.lookAt(tempBillboardTarget);
         }
       }
     });
@@ -3500,7 +3673,7 @@ function setupChatUi() {
       setChatCollapsed(!chatCollapsed);
     });
 
-    setChatCollapsed(true);
+    setChatCollapsed(chatCollapsed);
     appendChatLine("\uC2DC\uC2A4\uD15C", "\uCC44\uD305\uC774 \uC900\uBE44\uB418\uC5C8\uC2B5\uB2C8\uB2E4. Enter\uB85C \uC804\uC1A1\uD558\uC138\uC694.", "system");
   }
 
