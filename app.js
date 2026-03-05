@@ -139,7 +139,8 @@
     mobileChatBtn: document.getElementById("mobile-chat"),
     portalTransition: document.getElementById("portal-transition"),
     portalTransitionLabel: document.getElementById("portal-transition-label"),
-    portalTransitionTitle: document.getElementById("portal-transition-title")
+    portalTransitionTitle: document.getElementById("portal-transition-title"),
+    hostSections: Array.from(document.querySelectorAll(".host-section"))
   };
 
   if (!dom.canvasRoot || !dom.loading || !window.THREE || !window.THREE.OrbitControls) {
@@ -147,9 +148,10 @@
   }
 
   const THREE = window.THREE;
-  const isMobile =
-    /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || "") ||
-    (typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches);
+  const userAgent = String(navigator.userAgent || "").toLowerCase();
+  const hasCoarsePointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+  const isNarrowViewport = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches;
+  const isMobile = /android|iphone|ipad|ipod|mobile|tablet/i.test(userAgent) || (hasCoarsePointer && isNarrowViewport);
   const networkInfo = navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
   const networkEffectiveType = String(networkInfo && networkInfo.effectiveType ? networkInfo.effectiveType : "").toLowerCase();
   const prefersReducedData = Boolean(networkInfo && networkInfo.saveData);
@@ -185,6 +187,8 @@
     closedDoorBarrierZ: 22.2,
     closedDoorHalfGap: 1.75
   });
+  const LOBBY_HALL_AUTO_ENTER_Z = LOBBY_BOUNDS.maxZ - 0.45;
+  const LOBBY_HALL_AUTO_ENTER_HALF_WIDTH = LOBBY_BOUNDS.corridorHalfWidth + 0.4;
   const LOBBY_PORTAL_ENTRY_RADIUS = 4.8;
   const LOBBY_PORTAL_ENTRY_RADIUS_SQ = LOBBY_PORTAL_ENTRY_RADIUS * LOBBY_PORTAL_ENTRY_RADIUS;
   const LOBBY_DOOR_ENTRY_RADIUS = 3.2;
@@ -380,7 +384,6 @@
       event.preventDefault();
     }
 
-    if (key === "e") handleLobbyInteract();
     if (isHostClient && key === "h") {
       setDoorOpen(!doorOpen);
     }
@@ -433,14 +436,14 @@
 
   if (dom.fxParticlesBtn) {
     dom.fxParticlesBtn.addEventListener("click", () => {
-      if (!canControlShowOps() || activeMap !== "hall") return;
+      if (!canControlShowOps()) return;
       applyFxState({ particles: !fxParticlesEnabled });
     });
   }
 
   if (dom.fxLightsBtn) {
     dom.fxLightsBtn.addEventListener("click", () => {
-      if (!canControlShowOps() || activeMap !== "hall") return;
+      if (!canControlShowOps()) return;
       applyFxState({ lights: !fxLightsEnabled });
     });
   }
@@ -452,10 +455,12 @@
     });
   }
 
-  dom.qualitySelect.addEventListener("change", () => {
-    qualityMode = QUALITY_MODES[dom.qualitySelect.value] ? dom.qualitySelect.value : "medium";
-    applyQuality();
-  });
+  if (dom.qualitySelect) {
+    dom.qualitySelect.addEventListener("change", () => {
+      qualityMode = QUALITY_MODES[dom.qualitySelect.value] ? dom.qualitySelect.value : "medium";
+      applyQuality();
+    });
+  }
 
   dom.clipButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -719,14 +724,16 @@
     }
 
     if (dom.mobileSprintBtn) {
-      const setSprint = (active) => {
-        moveState.run = Boolean(active);
-        dom.mobileSprintBtn.classList.toggle("active", moveState.run);
+      const setJump = (active) => {
+        if (active) {
+          moveState.jump = true;
+        }
+        dom.mobileSprintBtn.classList.toggle("active", Boolean(active));
       };
-      dom.mobileSprintBtn.addEventListener("pointerdown", () => setSprint(true));
-      dom.mobileSprintBtn.addEventListener("pointerup", () => setSprint(false));
-      dom.mobileSprintBtn.addEventListener("pointercancel", () => setSprint(false));
-      dom.mobileSprintBtn.addEventListener("pointerleave", () => setSprint(false));
+      dom.mobileSprintBtn.addEventListener("pointerdown", () => setJump(true));
+      dom.mobileSprintBtn.addEventListener("pointerup", () => setJump(false));
+      dom.mobileSprintBtn.addEventListener("pointercancel", () => setJump(false));
+      dom.mobileSprintBtn.addEventListener("pointerleave", () => setJump(false));
     }
 
     if (dom.mobileChatBtn) {
@@ -1047,14 +1054,14 @@
       const nearDoor = isNearLobbyDoor();
       if (nearPortal) {
         dom.statusIntent.textContent = exitUrl
-          ? "\uD3EC\uD0C8 \uADFC\uCC98\uC785\uB2C8\uB2E4. E\uB97C \uB20C\uB7EC \uB2E4\uC74C \uB9C1\uD06C\uB85C \uC774\uB3D9\uD558\uC138\uC694."
+          ? "\uD3EC\uD0C8 \uADFC\uCC98\uC785\uB2C8\uB2E4. \uD3EC\uD0C8\uC5D0 \uC811\uCD09\uD558\uBA74 \uB2E4\uC74C \uB9C1\uD06C\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4."
           : "\uD3EC\uD0C8 \uB9C1\uD06C\uAC00 \uC544\uC9C1 \uC124\uC815\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
       } else if (!doorOpen) {
         dom.statusIntent.textContent = "\uBB38\uC774 \uB2EB\uD600 \uC788\uC2B5\uB2C8\uB2E4. \uD638\uC2A4\uD2B8\uAC00 \uBB38\uC744 \uC5F4\uC5B4\uC57C \uACF5\uC5F0\uC7A5 \uC785\uC7A5\uC774 \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
       } else if (nearDoor) {
-        dom.statusIntent.textContent = "\uBB38\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. E\uB97C \uB20C\uB7EC \uACF5\uC5F0\uC7A5\uC73C\uB85C \uC785\uC7A5\uD558\uC138\uC694.";
+        dom.statusIntent.textContent = "\uBB38\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uBCF5\uB3C4\uB97C \uB530\uB77C \uAC78\uC5B4\uAC00\uBA74 \uACF5\uC5F0\uC7A5\uC73C\uB85C \uC5F0\uACB0\uB429\uB2C8\uB2E4.";
       } else {
-        dom.statusIntent.textContent = "\uBB38\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uB85C\uBE44 \uC911\uC559 \uBB38 \uADFC\uCC98\uC5D0\uC11C E\uB97C \uB20C\uB7EC \uC785\uC7A5\uD558\uC138\uC694.";
+        dom.statusIntent.textContent = "\uBB38\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uBCF5\uB3C4\uB97C \uB530\uB77C \uACF5\uC5F0\uC7A5\uC73C\uB85C \uC774\uB3D9\uD558\uC138\uC694.";
       }
     }
 
@@ -1170,38 +1177,41 @@
   }
 
   function updateDoorUi() {
-    if (!dom.portalActionBtn) return;
-    const inLobby = activeMap === "lobby";
-    const nearDoor = isNearLobbyDoor();
-    const nearPortal = isNearLobbyPortal();
-    const exitUrl = buildPortalExitUrl();
-
-    if (!inLobby) {
+    if (dom.portalActionBtn) {
+      dom.portalActionBtn.classList.add("hidden");
       dom.portalActionBtn.disabled = true;
-      dom.portalActionBtn.textContent = "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 (E)";
+    }
+    if (dom.portalPhaseNote) {
+      dom.portalPhaseNote.classList.add("hidden");
+    }
+  }
+
+  function shouldAutoEnterHallFromLobby(position = camera.position) {
+    if (activeMap !== "lobby" || !doorOpen || !firstPersonEnabled || transitionInFlight) {
+      return false;
+    }
+    return position.z >= LOBBY_HALL_AUTO_ENTER_Z && Math.abs(position.x) <= LOBBY_HALL_AUTO_ENTER_HALF_WIDTH;
+  }
+
+  function enterHallFromCorridor() {
+    if (!shouldAutoEnterHallFromLobby()) {
       return;
     }
+    transitionInFlight = true;
+    setMap("hall", true);
 
-    if (nearPortal) {
-      dom.portalActionBtn.disabled = !exitUrl;
-      dom.portalActionBtn.textContent = exitUrl ? "\uC678\uBD80 \uD3EC\uD0C8 \uC774\uB3D9 (E)" : "\uC678\uBD80 \uD3EC\uD0C8 \uB9C1\uD06C \uBBF8\uC124\uC815";
-      return;
-    }
+    const nextX = clampNumber(camera.position.x * 1.15, -8, 8);
+    const eyeY = PLAYER_EYE_HEIGHT.hall;
+    camera.position.set(nextX, eyeY, 41.6);
+    controls.target.set(nextX, 2.4, 67.5);
+    controls.update();
 
-    const canEnter = doorOpen && nearDoor;
-    dom.portalActionBtn.disabled = !canEnter;
+    syncYawPitchFromCamera();
+    syncPlayerHeightToGround({ resetVelocity: true });
+    syncOrbitTargetToCamera();
+    emitLocalPlayerState(true);
 
-    if (!doorOpen) {
-      dom.portalActionBtn.textContent = "\uBB38 \uB2EB\uD798 - \uD638\uC2A4\uD2B8 \uB300\uAE30";
-      return;
-    }
-
-    if (!nearDoor) {
-      dom.portalActionBtn.textContent = "\uBB38 \uADFC\uCC98\uB85C \uC774\uB3D9";
-      return;
-    }
-
-    dom.portalActionBtn.textContent = "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 (E)";
+    transitionInFlight = false;
   }
 
   function snapToLobbyPortalSpawn() {
@@ -1312,7 +1322,8 @@
 
   function updateUiByMap() {
     updatePortalUiCopy(true);
-    dom.portalActionBtn.classList.toggle("hidden", activeMap !== "lobby");
+    dom.portalActionBtn.classList.add("hidden");
+    dom.portalPhaseNote?.classList.add("hidden");
     updateDoorUi();
     const hasExternalReturn = Boolean(buildLobbyReturnUrl());
     const showReturn = activeMap === "hall" || hasExternalReturn;
@@ -1329,7 +1340,7 @@
 
 function updateFxButtons() {
     const hallOnly = activeMap === "hall";
-    const canControl = hallOnly && canControlShowOps();
+    const canControl = canControlShowOps();
 
     if (dom.fxParticlesBtn) {
       dom.fxParticlesBtn.classList.toggle("active", fxParticlesEnabled);
@@ -1344,7 +1355,7 @@ function updateFxButtons() {
     }
 
     if (dom.fxFireworksBtn) {
-      dom.fxFireworksBtn.disabled = !canControl;
+      dom.fxFireworksBtn.disabled = !canControl || !hallOnly;
     }
   }
 
@@ -1385,7 +1396,7 @@ function updateFxButtons() {
 
   function requestFireworkBurst(options = {}) {
     const { broadcast = socketConnected && isHostClient, fromNetwork = false } = options;
-    pendingFireworkBursts += 1;
+    pendingFireworkBursts += 2;
 
     if (broadcast && socketConnected && isHostClient && socket && !fromNetwork) {
       socket.emit("fx:set", {
@@ -1403,7 +1414,7 @@ function applyQuality() {
     const shadowSize = quality.shadows ? (isMobile ? 512 : 1024) : 256;
     hallMap.stageWash.shadow.mapSize.width = shadowSize;
     hallMap.stageWash.shadow.mapSize.height = shadowSize;
-    hallMap.particles.visible = quality.particles && fxParticlesEnabled && activeMap === "hall";
+    hallMap.particles.visible = fxParticlesEnabled && activeMap === "hall";
     updateHud();
   }
 
@@ -2082,6 +2093,9 @@ function clampNumber(value, min, max) {
 
   function applyUiVisibilityMode() {
     const hideOptionalUi = !adminUiMode;
+    if (dom.hostSections && dom.hostSections.length) {
+      dom.hostSections.forEach((section) => setElementHidden(section, hideOptionalUi));
+    }
     setElementHidden(dom.introStats, hideOptionalUi);
     setElementHidden(dom.controlsTitle, hideOptionalUi);
     setElementHidden(dom.presetGrid, hideOptionalUi);
@@ -2102,6 +2116,8 @@ function clampNumber(value, min, max) {
     setElementHidden(dom.hudSeatsChip, true);
     setElementHidden(dom.hudPlayersRow, true);
     setElementHidden(dom.statCapacityCard, true);
+    setElementHidden(dom.portalActionBtn, true);
+    setElementHidden(dom.portalPhaseNote, true);
 
     activeAudience = CAPACITY;
     if (dom.statSeats) {
@@ -2231,6 +2247,7 @@ function clampNumber(value, min, max) {
     }
     playerGrounded = true;
     camera.position.y = playerFootY + PLAYER_EYE_HEIGHT[activeMap];
+    enterHallFromCorridor();
   }
 
   function applyCameraCollision() {
@@ -2408,7 +2425,7 @@ function clampNumber(value, min, max) {
   function spawnFireworkBurst(fx, mode) {
     const colorHex = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
     const color = new THREE.Color(colorHex);
-    const burstCount = Math.max(14, Math.round(fx.baseBurst * mode.fireworkBurstScale));
+    const burstCount = Math.max(28, Math.round(fx.baseBurst * mode.fireworkBurstScale));
 
     const originX = (Math.random() - 0.5) * 56;
     const originY = 8 + Math.random() * 9;
@@ -2481,7 +2498,7 @@ function clampNumber(value, min, max) {
       hallMap.particles.visible = false;
     } else {
       animateHall(elapsed, delta);
-      hallMap.particles.visible = QUALITY_MODES[qualityMode].particles && fxParticlesEnabled;
+      hallMap.particles.visible = fxParticlesEnabled;
     }
     updateDoorVisuals();
     updateRemotePlayers(elapsed, delta);
@@ -2599,7 +2616,7 @@ function setMovementKeyState(key, code, pressed) {
     if (key === "s" || key === "arrowdown" || code === "keys") moveState.backward = pressed;
     if (key === "a" || key === "arrowleft" || code === "keya") moveState.left = pressed;
     if (key === "d" || key === "arrowright" || code === "keyd") moveState.right = pressed;
-    if (key === "shift" || code === "shiftleft" || code === "shiftright") moveState.run = pressed;
+    if (key === "shift" || code === "shiftleft" || code === "shiftright") moveState.jump = pressed;
     if (key === " " || key === "space" || key === "spacebar" || code === "space") moveState.jump = pressed;
   }
 
@@ -2612,7 +2629,7 @@ function setMovementKeyState(key, code, pressed) {
 
     const forwardIntent = (moveState.forward ? 1 : 0) - (moveState.backward ? 1 : 0);
     const strafeIntent = (moveState.right ? 1 : 0) - (moveState.left ? 1 : 0);
-    const speed = PLAYER_MOVE_SPEED * (moveState.run ? PLAYER_RUN_MULTIPLIER : 1);
+    const speed = PLAYER_MOVE_SPEED;
 
     const nextPos = camera.position.clone();
     if (forwardIntent !== 0 || strafeIntent !== 0) {
@@ -3585,7 +3602,7 @@ function createLobbyMap(THREERef, targetScene, mobile) {
   }
 
   function createFireworkSystem(THREERef, mobile) {
-    const count = mobile ? 240 : 480;
+    const count = mobile ? 520 : 980;
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     const velocity = new Float32Array(count * 3);
@@ -3620,7 +3637,7 @@ function createLobbyMap(THREERef, targetScene, mobile) {
 
     return {
       count,
-      baseBurst: mobile ? 16 : 30,
+      baseBurst: mobile ? 34 : 62,
       cursor: 0,
       cooldown: 0.4,
       positions,

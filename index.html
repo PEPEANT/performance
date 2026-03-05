@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>NEXA 라이브 로비</title>
+  <title>NEXA ?쇱씠釉?濡쒕퉬</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
   <link rel="stylesheet" href="./style.css" />
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -15,117 +15,118 @@
   <main id="app">
     <aside id="overlay">
       <section class="panel panel-intro">
-        <h1><span class="live-badge">실시간</span> NEXA 라이브 로비</h1>
-        <p id="status-intent">로비에서 복도를 따라 이동해 공연장 입구로 진입하세요.</p>
+        <h1><span class="live-badge">?ㅼ떆媛?/span> NEXA ?쇱씠釉?濡쒕퉬</h1>
+        <p id="status-intent">濡쒕퉬?먯꽌 蹂듬룄瑜??곕씪 ?대룞??怨듭뿰???낃뎄濡?吏꾩엯?섏꽭??</p>
       </section>
 
       <section class="panel panel-controls">
-        <h2>카메라 프리셋</h2>
-        <div class="preset-grid">
-          <button type="button" data-map-scope="lobby" data-preset="lobby_entry">로비 입구</button>
-          <button type="button" data-map-scope="lobby" data-preset="lobby_corridor">로비 복도</button>
-          <button type="button" data-map-scope="hall" data-preset="hall_wide">공연장 전체</button>
-          <button type="button" data-map-scope="hall" data-preset="hall_stage">무대 근접</button>
-          <button type="button" data-map-scope="hall" data-preset="hall_audience">관객석 시점</button>
-        </div>
+        <details class="host-section" id="host-section-camera" open>
+          <summary>카메라/이동</summary>
+          <h2>카메라 프리셋</h2>
+          <div class="preset-grid">
+            <button type="button" data-map-scope="lobby" data-preset="lobby_entry">로비 입구</button>
+            <button type="button" data-map-scope="lobby" data-preset="lobby_corridor">로비 복도</button>
+            <button type="button" data-map-scope="hall" data-preset="hall_wide">공연장 전체</button>
+            <button type="button" data-map-scope="hall" data-preset="hall_stage">무대 근접</button>
+            <button type="button" data-map-scope="hall" data-preset="hall_audience">관객석 시점</button>
+          </div>
+          <button id="fps-toggle-btn" class="ghost-btn" type="button">1인칭 모드 켜기 (F)</button>
+        </details>
 
-        <div class="ops-stack">
-          <div class="ops-row">
-            <span class="ops-label">&#44277;&#50672; &#50672;&#52636;</span>
-            <div class="mode-grid">
-              <button id="fx-particles-btn" type="button">&#54028;&#53944;&#53364; &#45148;&#44592;</button>
-              <button id="fx-lights-btn" type="button">&#48520; &#45148;&#44592;</button>
-              <button id="fx-fireworks-btn" type="button">&#47924;&#45824; &#54253;&#51453; &#53552;&#53944;&#47532;&#44592;</button>
+        <details class="host-section" id="host-section-stage" open>
+          <summary>공연/효과</summary>
+          <div class="ops-stack">
+            <div class="ops-row">
+              <span class="ops-label">공연 연출</span>
+              <div class="mode-grid">
+                <button id="fx-particles-btn" type="button">파티클 끄기</button>
+                <button id="fx-lights-btn" type="button">불 끄기</button>
+                <button id="fx-fireworks-btn" type="button">무대 폭죽 터트리기</button>
+              </div>
             </div>
           </div>
 
-          <div class="ops-row">
-            <label class="ops-label" for="quality-select">렌더 품질</label>
-            <select id="quality-select" class="quality-select">
-              <option value="low">낮음</option>
-              <option value="medium" selected>보통</option>
-              <option value="high">높음</option>
-            </select>
+          <button id="show-start-btn" class="accent-btn hidden" type="button">공연 시작</button>
+          <button id="host-door-btn" class="ghost-btn" type="button">호스트 문 닫기</button>
+
+          <div class="clip-panel">
+            <h3>안무 클립 (1~10)</h3>
+            <div id="clip-grid" class="clip-grid">
+              <button type="button" data-clip-id="1">1</button>
+              <button type="button" data-clip-id="2">2</button>
+              <button type="button" data-clip-id="3">3</button>
+              <button type="button" data-clip-id="4">4</button>
+              <button type="button" data-clip-id="5">5</button>
+              <button type="button" data-clip-id="6">6</button>
+              <button type="button" data-clip-id="7">7</button>
+              <button type="button" data-clip-id="8">8</button>
+              <button type="button" data-clip-id="9">9</button>
+              <button type="button" data-clip-id="10">10</button>
+            </div>
+
+            <div class="queue-grid">
+              <button id="queue-record-btn" type="button">큐 녹화 시작</button>
+              <button id="queue-play-btn" type="button">큐 재생</button>
+              <button id="queue-loop-btn" type="button">루프 켜기</button>
+              <button id="queue-save-btn" type="button">큐 저장</button>
+              <button id="queue-load-btn" type="button">큐 불러오기</button>
+              <button id="queue-clear-btn" type="button">큐 초기화</button>
+            </div>
+            <p id="queue-status" class="ops-value">대기 | 이벤트 0개 | 재생 정지</p>
           </div>
-        </div>
+        </details>
 
-        <button id="network-panel-toggle-btn" class="ghost-btn network-toggle-btn" type="button" aria-expanded="false" aria-controls="network-panel">
-          온라인 접속 패널 열기
-        </button>
-        <div id="network-panel" class="network-panel hidden">
-          <h3>온라인 접속</h3>
-          <div class="network-grid">
-            <label class="ops-label" for="network-role-select">역할</label>
-            <select id="network-role-select" class="quality-select">
-              <option value="host">호스트(관리자)</option>
-              <option value="player">플레이어(1인칭)</option>
-            </select>
+        <details class="host-section" id="host-section-network" open>
+          <summary>네트워크</summary>
+          <button id="network-panel-toggle-btn" class="ghost-btn network-toggle-btn" type="button" aria-expanded="false" aria-controls="network-panel">
+            온라인 접속 설정 열기
+          </button>
+          <div id="network-panel" class="network-panel hidden">
+            <h3>온라인 접속</h3>
+            <div class="network-grid">
+              <label class="ops-label" for="network-role-select">역할</label>
+              <select id="network-role-select" class="quality-select">
+                <option value="host">호스트(관리자)</option>
+                <option value="player">플레이어(1인칭)</option>
+              </select>
 
-            <label class="ops-label" for="network-room-input">룸 코드</label>
-            <input id="network-room-input" class="network-input" type="text" maxlength="32" autocomplete="off" placeholder="main" />
+              <label class="ops-label" for="network-room-input">룸 코드</label>
+              <input id="network-room-input" class="network-input" type="text" maxlength="32" autocomplete="off" placeholder="main" />
 
-            <label class="ops-label" for="network-name-input">닉네임</label>
-            <input id="network-name-input" class="network-input" type="text" maxlength="24" autocomplete="off" placeholder="플레이어 이름" />
+              <label class="ops-label" for="network-name-input">닉네임</label>
+              <input id="network-name-input" class="network-input" type="text" maxlength="24" autocomplete="off" placeholder="플레이어 이름" />
+            </div>
+            <button id="network-apply-btn" class="ghost-btn" type="button">역할 적용 및 재접속</button>
+            <p id="network-note" class="ops-value">현재 설정 확인 중...</p>
           </div>
-          <button id="network-apply-btn" class="ghost-btn" type="button">역할 적용 및 재접속</button>
-          <p id="network-note" class="ops-value">현재 설정 확인 중...</p>
-        </div>
+          <button id="return-lobby-btn" class="ghost-btn hidden" type="button">로비로 돌아가기</button>
+        </details>
 
-        <button id="portal-action-btn" class="accent-btn" type="button">공연장 입장 (E)</button>
-        <p id="portal-phase-note" class="ops-value">포탈 상태 동기화 중...</p>
-        <button id="show-start-btn" class="accent-btn hidden" type="button">공연 시작</button>
-        <button id="host-door-btn" class="ghost-btn" type="button">호스트 문 닫기</button>
-        <button id="fps-toggle-btn" class="ghost-btn" type="button">1인칭 모드 켜기 (F)</button>
-        <button id="return-lobby-btn" class="ghost-btn hidden" type="button">로비로 돌아가기</button>
-
-        <div class="clip-panel">
-          <h3>안무 클립 (1~10)</h3>
-          <div id="clip-grid" class="clip-grid">
-            <button type="button" data-clip-id="1">1</button>
-            <button type="button" data-clip-id="2">2</button>
-            <button type="button" data-clip-id="3">3</button>
-            <button type="button" data-clip-id="4">4</button>
-            <button type="button" data-clip-id="5">5</button>
-            <button type="button" data-clip-id="6">6</button>
-            <button type="button" data-clip-id="7">7</button>
-            <button type="button" data-clip-id="8">8</button>
-            <button type="button" data-clip-id="9">9</button>
-            <button type="button" data-clip-id="10">10</button>
-          </div>
-
-          <div class="queue-grid">
-            <button id="queue-record-btn" type="button">큐 녹화 시작</button>
-            <button id="queue-play-btn" type="button">큐 재생</button>
-            <button id="queue-loop-btn" type="button">루프 켜기</button>
-            <button id="queue-save-btn" type="button">큐 저장</button>
-            <button id="queue-load-btn" type="button">큐 불러오기</button>
-            <button id="queue-clear-btn" type="button">큐 초기화</button>
-          </div>
-          <p id="queue-status" class="ops-value">대기 | 이벤트 0개 | 재생 정지</p>
-        </div>
+        <button id="portal-action-btn" class="accent-btn hidden" type="button" aria-hidden="true" tabindex="-1">공연장 입장 (E)</button>
+        <p id="portal-phase-note" class="ops-value hidden"></p>
       </section>
     </aside>
 
     <aside id="hud" class="hidden" aria-live="polite">
-      <div class="hud-chip"><span>맵</span><strong id="hud-map">로비</strong></div>
-      <div class="hud-chip"><span>프레임</span><strong id="hud-fps">0</strong></div>
-      <div class="hud-chip" id="hud-chip-seats"><span>활성 좌석</span><strong id="hud-seats">0</strong></div>
-      <div class="hud-chip"><span>품질</span><strong id="hud-quality">보통</strong></div>
-      <div class="hud-chip"><span>문</span><strong id="hud-portal">열림</strong></div>
-      <div class="hud-chip"><span>드로우콜</span><strong id="hud-drawcalls">0</strong></div>
+      <div class="hud-chip"><span>留?/span><strong id="hud-map">濡쒕퉬</strong></div>
+      <div class="hud-chip"><span>?꾨젅??/span><strong id="hud-fps">0</strong></div>
+      <div class="hud-chip" id="hud-chip-seats"><span>?쒖꽦 醫뚯꽍</span><strong id="hud-seats">0</strong></div>
+      <div class="hud-chip"><span>?덉쭏</span><strong id="hud-quality">蹂댄넻</strong></div>
+      <div class="hud-chip"><span>臾?/span><strong id="hud-portal">?대┝</strong></div>
+      <div class="hud-chip"><span>?쒕줈?곗퐳</span><strong id="hud-drawcalls">0</strong></div>
     </aside>
 
-    <div id="hud-ui" class="hidden" aria-label="플레이어 상태">
+    <div id="hud-ui" class="hidden" aria-label="?뚮젅?댁뼱 ?곹깭">
       <div class="hud-row" id="hud-row-status">
-        <span class="hud-key">상태</span>
-        <span id="hud-status">스프린트</span>
+        <span class="hud-key">?곹깭</span>
+        <span id="hud-status">?ㅽ봽由고듃</span>
       </div>
       <div class="hud-row" id="hud-row-players">
-        <span class="hud-key">현재 인원</span>
+        <span class="hud-key">?꾩옱 ?몄썝</span>
         <span id="hud-players">1</span>
       </div>
       <div class="hud-row" id="hud-row-position">
-        <span class="hud-key">좌표</span>
+        <span class="hud-key">醫뚰몴</span>
         <span id="hud-position">0, 0</span>
       </div>
       <div class="hud-row" id="hud-row-fps-mini">
@@ -134,38 +135,52 @@
       </div>
     </div>
 
-    <div id="chat-ui" class="collapsed" aria-label="채팅">
+    <div id="chat-ui" class="collapsed" aria-label="梨꾪똿">
       <div id="chat-header">
-        <span id="chat-title">현장 채팅</span>
-        <button id="chat-toggle" type="button" aria-expanded="false">열기</button>
+        <span id="chat-title">?꾩옣 梨꾪똿</span>
+        <button id="chat-toggle" type="button" aria-expanded="false">?닿린</button>
       </div>
       <div id="chat-log" role="log" aria-live="polite" aria-relevant="additions text"></div>
       <div id="chat-controls">
-        <input id="chat-input" type="text" maxlength="140" autocomplete="off" placeholder="메시지 입력 후 Enter" />
-        <button id="chat-send" type="button">전송</button>
+        <input id="chat-input" type="text" maxlength="140" autocomplete="off" placeholder="硫붿떆吏 ?낅젰 ??Enter" />
+        <button id="chat-send" type="button">?꾩넚</button>
       </div>
     </div>
-    <div id="mobile-ui" class="hidden" aria-label="모바일 조작">
+    <div id="mobile-ui" class="hidden" aria-label="紐⑤컮??議곗옉">
       <div id="mobile-left-col">
-        <button id="mobile-chat" class="mobile-action-btn" type="button">채팅</button>
+        <button id="mobile-chat" class="mobile-action-btn" type="button">梨꾪똿</button>
         <div id="mobile-move-pad" role="presentation">
           <div id="mobile-move-stick"></div>
         </div>
       </div>
       <div id="mobile-actions">
-        <button id="mobile-sprint" class="mobile-action-btn" type="button">질주</button>
+        <button id="mobile-sprint" class="mobile-action-btn" type="button">점프</button>
         <button id="mobile-jump" class="mobile-action-btn" type="button">점프</button>
       </div>
     </div>
 
-    <div id="loading" aria-live="polite">로비 구성 중...</div>
-    <div id="portal-transition" aria-hidden="true">
-      <div class="portal-transition-card">
-        <p id="portal-transition-label">포탈 동기화</p>
-        <h2 id="portal-transition-title">공연장 입장 중...</h2>
+    <div id="loading" aria-live="polite">濡쒕퉬 援ъ꽦 以?..</div>
+    <div id="nickname-gate" class="hidden" aria-live="polite">
+      <div class="nickname-gate-card">
+        <h2>?됰꽕???낅젰</h2>
+        <p>?낆옣 ?꾩뿉 ?쒖떆???됰꽕?꾩쓣 ?낅젰?섏꽭??</p>
+        <input id="nickname-gate-input" type="text" maxlength="24" autocomplete="off" placeholder="?됰꽕??(2~24??" />
+        <button id="nickname-gate-confirm-btn" type="button">?낆옣</button>
+        <p id="nickname-gate-note" class="ops-value">?됰꽕?꾩쓣 ?낅젰?섍퀬 ?낆옣 踰꾪듉???꾨Ⅴ?몄슂.</p>
       </div>
     </div>
-    <div id="canvas-root" aria-label="3D 무대 뷰포트"></div>
+
+    <div id="portal-transition" aria-hidden="true">
+      <div class="portal-transition-card">
+        <p id="portal-transition-label">?ы깉 ?숆린??/p>
+        <h2 id="portal-transition-title">怨듭뿰???낆옣 以?..</h2>
+      </div>
+    </div>
+    <div id="canvas-root" aria-label="3D 臾대? 酉고룷??></div>
   </main>
 </body>
 </html>
+
+
+
+
