@@ -228,15 +228,17 @@
   const HALL_STAGE_BOUNDS = Object.freeze({ minX: -26, maxX: 26, minZ: 84, maxZ: 108, height: 2.4 });
   const LOBBY_BOUNDS = Object.freeze({
     minZ: 3.2,
-    maxZ: 45.2,
+    maxZ: 37.2,
     corridorStartZ: 23,
     lobbyHalfWidth: 13.2,
     corridorHalfWidth: 3.55,
     closedDoorBarrierZ: 22.2,
     closedDoorHalfGap: 1.75
   });
-  const LOBBY_HALL_AUTO_ENTER_Z = LOBBY_BOUNDS.maxZ - 2.2;
-  const LOBBY_HALL_AUTO_ENTER_HALF_WIDTH = LOBBY_BOUNDS.corridorHalfWidth + 0.9;
+  const LOBBY_HALL_AUTO_ENTER_Z = LOBBY_BOUNDS.maxZ - 1.0;
+  const LOBBY_HALL_AUTO_ENTER_HALF_WIDTH = LOBBY_BOUNDS.corridorHalfWidth + 0.75;
+  const HALL_LOBBY_AUTO_RETURN_Z = 39.0;
+  const HALL_LOBBY_AUTO_RETURN_HALF_WIDTH = LOBBY_HALL_AUTO_ENTER_HALF_WIDTH;
   const LOBBY_PORTAL_ENTRY_RADIUS = 4.8;
   const LOBBY_PORTAL_ENTRY_RADIUS_SQ = LOBBY_PORTAL_ENTRY_RADIUS * LOBBY_PORTAL_ENTRY_RADIUS;
   const LOBBY_DOOR_ENTRY_RADIUS = 3.2;
@@ -1460,10 +1462,39 @@
     transitionInFlight = true;
     setMap("hall", true);
 
-    const nextX = clampNumber(camera.position.x * 1.15, -8, 8);
+    const nextX = clampNumber(camera.position.x * 1.05, -6.5, 6.5);
     const eyeY = PLAYER_EYE_HEIGHT.hall;
-    camera.position.set(nextX, eyeY, 41.6);
-    controls.target.set(nextX, 2.4, 67.5);
+    camera.position.set(nextX, eyeY, 38.9);
+    controls.target.set(nextX, 2.4, 52.0);
+    controls.update();
+
+    syncYawPitchFromCamera();
+    syncPlayerHeightToGround({ resetVelocity: true });
+    syncOrbitTargetToCamera();
+    emitLocalPlayerState(true);
+
+    transitionInFlight = false;
+  }
+
+  function shouldAutoReturnLobbyFromHall(position = camera.position) {
+    if (activeMap !== "hall" || !doorOpen || !firstPersonEnabled || transitionInFlight) {
+      return false;
+    }
+    return position.z <= HALL_LOBBY_AUTO_RETURN_Z && Math.abs(position.x) <= HALL_LOBBY_AUTO_RETURN_HALF_WIDTH;
+  }
+
+  function enterLobbyFromHallCorridor() {
+    if (!shouldAutoReturnLobbyFromHall()) {
+      return;
+    }
+
+    transitionInFlight = true;
+    setMap("lobby", true);
+
+    const nextX = clampNumber(camera.position.x * 0.85, -3.2, 3.2);
+    const eyeY = PLAYER_EYE_HEIGHT.lobby;
+    camera.position.set(nextX, eyeY, 35.0);
+    controls.target.set(nextX, 2.4, 24.8);
     controls.update();
 
     syncYawPitchFromCamera();
@@ -2759,6 +2790,7 @@ function clampNumber(value, min, max) {
 
     if (firstPersonEnabled) {
       resolveHallHorizontalPosition(camera.position, camera.position);
+      enterLobbyFromHallCorridor();
       return;
     }
 
@@ -4011,11 +4043,11 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     group.add(floor);
 
     const corridorFloor = new THREERef.Mesh(
-      new THREERef.PlaneGeometry(8.4, 22),
+      new THREERef.PlaneGeometry(8.4, 14),
       new THREERef.MeshStandardMaterial({ color: 0x121b2e, roughness: 0.84, metalness: 0.12 })
     );
     corridorFloor.rotation.x = -Math.PI / 2;
-    corridorFloor.position.set(0, 0.01, 34);
+    corridorFloor.position.set(0, 0.01, 30);
     corridorFloor.receiveShadow = true;
     group.add(corridorFloor);
 
@@ -4051,14 +4083,21 @@ function createLobbyMap(THREERef, targetScene, mobile) {
     posterSurface.rotation.y = -Math.PI / 2;
     group.add(posterSurface);
 
-    const corridorWallLeft = new THREERef.Mesh(new THREERef.BoxGeometry(0.65, 8, 22), wallMat);
-    corridorWallLeft.position.set(-4.2, 4, 34);
+    const corridorWallLeft = new THREERef.Mesh(new THREERef.BoxGeometry(0.75, 8, 14), wallMat);
+    corridorWallLeft.position.set(-4.2, 4, 30);
     const corridorWallRight = corridorWallLeft.clone();
     corridorWallRight.position.x = 4.2;
     group.add(corridorWallLeft, corridorWallRight);
 
+    // Fill side voids so lobby front edges don't look cut out when hall is visible.
+    const corridorSideFillLeft = new THREERef.Mesh(new THREERef.BoxGeometry(9.8, 8, 14), wallMat);
+    corridorSideFillLeft.position.set(-9.1, 4, 30);
+    const corridorSideFillRight = corridorSideFillLeft.clone();
+    corridorSideFillRight.position.x = 9.1;
+    group.add(corridorSideFillLeft, corridorSideFillRight);
+
     const corridorStrips = [];
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 6; i += 1) {
       const strip = new THREERef.Mesh(
         new THREERef.PlaneGeometry(1.6, 0.7),
         new THREERef.MeshStandardMaterial({
