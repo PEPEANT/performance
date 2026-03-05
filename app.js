@@ -158,6 +158,8 @@
   });
   const LOBBY_PORTAL_ENTRY_RADIUS = 4.8;
   const LOBBY_PORTAL_ENTRY_RADIUS_SQ = LOBBY_PORTAL_ENTRY_RADIUS * LOBBY_PORTAL_ENTRY_RADIUS;
+  const LOBBY_DOOR_ENTRY_RADIUS = 3.2;
+  const LOBBY_DOOR_ENTRY_RADIUS_SQ = LOBBY_DOOR_ENTRY_RADIUS * LOBBY_DOOR_ENTRY_RADIUS;
 
   if (dom.statCapacity) {
     dom.statCapacity.textContent = String(CAPACITY);
@@ -553,15 +555,10 @@
 
   function getPortalPhaseSummary() {
     if (!doorOpen) return "\uBB38 \uB2EB\uD798 - \uD638\uC2A4\uD2B8 \uB300\uAE30";
-    if (portalState.phase === "open") {
-      return isNearLobbyPortal()
-        ? "\uD3EC\uD0C8 \uAC1C\uBC29\uB428"
-        : "\uD3EC\uD0C8 \uAC1C\uBC29 \uB428 - \uC785\uAD6C \uC774\uB3D9";
-    }
-    if (portalState.phase === "warning") return "\uAC1C\uBC29 \uC900\uBE44 " + portalState.secondsLeft + "\uCD08";
-    return "\uD3EC\uD0C8 \uCDA9\uC804 " + portalState.secondsLeft + "\uCD08";
+    return isNearLobbyDoor()
+      ? "\uBB38 \uAC1C\uBC29 - E\uB85C \uACF5\uC5F0\uC7A5 \uC785\uC7A5"
+      : "\uBB38 \uAC1C\uBC29 - \uB85C\uBE44 \uC911\uC559 \uBB38 \uADFC\uCC98\uB85C \uC774\uB3D9";
   }
-
   function setPortalTransition(active, label, title) {
     if (!dom.portalTransition) return;
     if (typeof label === "string" && dom.portalTransitionLabel) {
@@ -610,7 +607,7 @@
 
   function isNearLobbyPortal(position = camera.position) {
     if (!lobbyMap.portalGroup || typeof lobbyMap.portalGroup.getWorldPosition !== "function") {
-      return true;
+      return false;
     }
     lobbyMap.portalGroup.getWorldPosition(lobbyPortalWorldPosition);
     const dx = position.x - lobbyPortalWorldPosition.x;
@@ -618,13 +615,18 @@
     return dx * dx + dz * dz <= LOBBY_PORTAL_ENTRY_RADIUS_SQ;
   }
 
+  function isNearLobbyDoor(position = camera.position) {
+    const dx = position.x;
+    const dz = position.z - LOBBY_BOUNDS.closedDoorBarrierZ;
+    return dx * dx + dz * dz <= LOBBY_DOOR_ENTRY_RADIUS_SQ;
+  }
   function updatePortalUiCopy(forceMapHint = false) {
     if (activeMap !== "lobby") {
       if (forceMapHint && dom.statusIntent) {
         dom.statusIntent.textContent = MAP_META[activeMap].hint;
       }
       if (dom.portalPhaseNote) {
-        dom.portalPhaseNote.textContent = "\uB85C\uBE44\uC5D0\uC11C \uD3EC\uD0C8 \uC0C1\uD0DC\uB97C \uD655\uC778\uD558\uC138\uC694.";
+        dom.portalPhaseNote.textContent = "\uB85C\uBE44\uC5D0\uC11C \uBB38 \uC0C1\uD0DC\uB97C \uD655\uC778\uD558\uC138\uC694.";
       }
       updateDoorUi();
       return;
@@ -633,17 +635,13 @@
     const summary = getPortalPhaseSummary();
 
     if (dom.statusIntent) {
-      const nearPortal = isNearLobbyPortal();
+      const nearDoor = isNearLobbyDoor();
       if (!doorOpen) {
-        dom.statusIntent.textContent = "\uBB38\uC774 \uB2EB\uD600 \uC788\uC2B5\uB2C8\uB2E4. \uD638\uC2A4\uD2B8\uAC00 \uBB38\uC744 \uC5F4\uBA74 \uD3EC\uD0C8 \uB300\uAE30 \uB2E8\uACC4\uAC00 \uC9C4\uD589\uB429\uB2C8\uB2E4.";
-      } else if (portalState.phase === "open" && nearPortal) {
-        dom.statusIntent.textContent = "\uD3EC\uD0C8\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. E\uB97C \uB20C\uB7EC \uACF5\uC5F0\uC7A5\uC73C\uB85C \uC785\uC7A5\uD558\uC138\uC694.";
-      } else if (portalState.phase === "open") {
-        dom.statusIntent.textContent = "\uD3EC\uD0C8\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uBCF5\uB3C4 \uB05D \uD3EC\uD0C8 \uADFC\uCC98\uC5D0\uC11C E\uB97C \uB20C\uB7EC \uC785\uC7A5\uD558\uC138\uC694.";
-      } else if (portalState.phase === "warning") {
-        dom.statusIntent.textContent = "\uD3EC\uD0C8 \uAC1C\uBC29 \uC900\uBE44 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uC785\uC7A5 \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
+        dom.statusIntent.textContent = "\uBB38\uC774 \uB2EB\uD600 \uC788\uC2B5\uB2C8\uB2E4. \uD638\uC2A4\uD2B8\uAC00 \uBB38\uC744 \uC5F4\uC5B4\uC57C \uACF5\uC5F0\uC7A5 \uC785\uC7A5\uC774 \uAC00\uB2A5\uD569\uB2C8\uB2E4.";
+      } else if (nearDoor) {
+        dom.statusIntent.textContent = "\uBB38\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. E\uB97C \uB20C\uB7EC \uACF5\uC5F0\uC7A5\uC73C\uB85C \uC785\uC7A5\uD558\uC138\uC694.";
       } else {
-        dom.statusIntent.textContent = "\uD3EC\uD0C8 \uCDA9\uC804 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uAC1C\uBC29\uB429\uB2C8\uB2E4.";
+        dom.statusIntent.textContent = "\uBB38\uC774 \uAC1C\uBC29\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uB85C\uBE44 \uC911\uC559 \uBB38 \uADFC\uCC98\uC5D0\uC11C E\uB97C \uB20C\uB7EC \uC785\uC7A5\uD558\uC138\uC694.";
       }
     }
 
@@ -653,7 +651,6 @@
 
     updateDoorUi();
   }
-
   function refreshPortalState(force) {
     const next = computePortalState(Date.now());
     portalState = next;
@@ -671,8 +668,8 @@
 
     refreshPortalState(false);
 
-    if (!isNearLobbyPortal()) {
-      dom.loading.textContent = "\uD3EC\uD0C8 \uADFC\uCC98\uC5D0\uC11C E\uB97C \uB20C\uB7EC \uC785\uC7A5\uD558\uC138\uC694.";
+    if (!isNearLobbyDoor()) {
+      dom.loading.textContent = "\uB85C\uBE44 \uC911\uC559 \uBB38 \uADFC\uCC98\uC5D0\uC11C E\uB97C \uB20C\uB7EC \uC785\uC7A5\uD558\uC138\uC694.";
       dom.loading.classList.remove("hidden");
       setTimeout(() => {
         if (!transitionInFlight) {
@@ -695,24 +692,9 @@
       return;
     }
 
-    if (portalState.phase !== "open") {
-      const waitText = portalState.phase === "warning"
-        ? "\uD3EC\uD0C8 \uAC1C\uBC29 \uC900\uBE44 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uC785\uC7A5 \uAC00\uB2A5\uD569\uB2C8\uB2E4."
-        : "\uD3EC\uD0C8 \uCDA9\uC804 \uC911\uC785\uB2C8\uB2E4. " + portalState.secondsLeft + "\uCD08 \uD6C4 \uAC1C\uBC29\uB429\uB2C8\uB2E4.";
-      dom.loading.textContent = waitText;
-      dom.loading.classList.remove("hidden");
-      setTimeout(() => {
-        if (!transitionInFlight) {
-          dom.loading.classList.add("hidden");
-          dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
-        }
-      }, 900);
-      return;
-    }
-
     transitionInFlight = true;
-    setPortalTransition(true, "\uD3EC\uD0C8 \uB3D9\uAE30\uD654", "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 \uC911...");
-    dom.loading.textContent = "\uD3EC\uD0C8 \uD1B5\uACFC \uC911...";
+    setPortalTransition(true, "\uC785\uC7A5 \uB3D9\uAE30\uD654", "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 \uC911...");
+    dom.loading.textContent = "\uC785\uC7A5 \uC911...";
     dom.loading.classList.remove("hidden");
 
     setTimeout(() => {
@@ -726,7 +708,6 @@
       }, 180);
     }, 680);
   }
-
   function setDoorOpen(nextOpen, options = {}) {
     const { broadcast = socketConnected && isHostClient } = options;
     const next = Boolean(nextOpen);
@@ -752,9 +733,8 @@
   function updateDoorUi() {
     if (!dom.portalActionBtn) return;
     const inLobby = activeMap === "lobby";
-    const portalOpen = portalState.phase === "open";
-    const nearPortal = isNearLobbyPortal();
-    const canEnter = inLobby && doorOpen && portalOpen && nearPortal;
+    const nearDoor = isNearLobbyDoor();
+    const canEnter = inLobby && doorOpen && nearDoor;
     dom.portalActionBtn.disabled = !canEnter;
 
     if (!inLobby) {
@@ -767,21 +747,13 @@
       return;
     }
 
-    if (!portalOpen) {
-      dom.portalActionBtn.textContent = portalState.phase === "warning"
-        ? "\uAC1C\uBC29 \uC900\uBE44 " + portalState.secondsLeft + "\uCD08"
-        : "\uD3EC\uD0C8 \uCDA9\uC804 " + portalState.secondsLeft + "\uCD08";
-      return;
-    }
-
-    if (!nearPortal) {
-      dom.portalActionBtn.textContent = "\uD3EC\uD0C8 \uADFC\uCC98\uB85C \uC774\uB3D9";
+    if (!nearDoor) {
+      dom.portalActionBtn.textContent = "\uBB38 \uADFC\uCC98\uB85C \uC774\uB3D9";
       return;
     }
 
     dom.portalActionBtn.textContent = "\uACF5\uC5F0\uC7A5 \uC785\uC7A5 (E)";
   }
-
   function snapToHallEntryView() {
     if (activeMap !== "hall") return;
 
