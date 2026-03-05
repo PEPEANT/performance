@@ -298,20 +298,12 @@ function assignHost(room, nextHostId) {
 }
 
 function findHostCandidate(room) {
-  // Prefer players who explicitly requested host role.
+  // Only explicit host intent can hold host authority.
   for (const player of room.players.values()) {
     if (player && player.wantsHost) {
       return player.id;
     }
   }
-
-  // Fallback: always keep one host assigned in a non-empty room.
-  for (const player of room.players.values()) {
-    if (player) {
-      return player.id;
-    }
-  }
-
   return null;
 }
 

@@ -117,15 +117,15 @@ async function checkRealtimeFlow(checks) {
       detail: { hostId: host.joined.hostId, playerHostId: player.joined.hostId }
     });
 
-    // New room where no one requests host: server must still assign one host.
+    // New room where no one requests host: host should remain unassigned.
     const fallbackA = await connectAndJoin('fallback-A', false, 'qa-fallback-room');
     clients.push(fallbackA.socket);
     const fallbackB = await connectAndJoin('fallback-B', false, 'qa-fallback-room');
     clients.push(fallbackB.socket);
 
     checks.push({
-      name: 'host_fallback_when_no_intent',
-      ok: Boolean(fallbackA.joined.hostId && fallbackB.joined.hostId),
+      name: 'host_unassigned_when_no_intent',
+      ok: !fallbackA.joined.hostId && !fallbackB.joined.hostId,
       detail: {
         fallbackAHostId: fallbackA.joined.hostId,
         fallbackBHostId: fallbackB.joined.hostId
