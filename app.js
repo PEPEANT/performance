@@ -49,11 +49,12 @@
 
   const query = new URLSearchParams(window.location.search);
   const fromEmptines = String(query.get("from") || "").trim().toLowerCase() === "emptines";
-  const adminUiMode = ["1", "true", "yes", "on"].includes(String(query.get("admin") || "").trim().toLowerCase());
   const chatEnabled = true;
   const hostParamRaw = String(query.get("host") || "").trim().toLowerCase();
   const explicitHostTrue = ["1", "true", "yes", "on", "host"].includes(hostParamRaw);
   const explicitHostFalse = ["0", "false", "no", "off", "player"].includes(hostParamRaw);
+  const explicitAdminTrue = ["1", "true", "yes", "on"].includes(String(query.get("admin") || "").trim().toLowerCase());
+  const adminUiMode = explicitAdminTrue || explicitHostTrue;
   let hostMode = explicitHostTrue ? true : explicitHostFalse ? false : adminUiMode;
   let networkRoomId = String(query.get("room") || "main")
     .trim()
