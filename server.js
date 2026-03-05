@@ -11,6 +11,7 @@ const PLAYER_STATE_MIN_INTERVAL_MS = 50;
 const SNAPSHOT_INTERVAL_MS = 100;
 const CLIP_ID_MIN = 1;
 const CLIP_ID_MAX = 10;
+const SPECIAL_PERFORMER_ACTION_IDS = new Set(["walk_in", "idle_hold", "greet", "walk_out"]);
 
 const app = express();
 const rootDir = __dirname;
@@ -183,6 +184,48 @@ function sanitizeClipId(raw, fallback = 0) {
   return clipId;
 }
 
+function clipActionId(clipId) {
+  const safeClipId = sanitizeClipId(clipId, 0);
+  return safeClipId ? `clip:${safeClipId}` : "";
+}
+
+function clipIdFromActionId(actionId) {
+  const text = String(actionId || "").trim().toLowerCase();
+  if (!text.startsWith("clip:")) return 0;
+  return sanitizeClipId(text.slice(5), 0);
+}
+
+function sanitizePerformerActionId(raw, fallback = "") {
+  const fallbackText = String(fallback || "").trim().toLowerCase();
+  const fallbackClip = sanitizeClipId(fallbackText, 0);
+  const fallbackActionFromClip = fallbackClip ? clipActionId(fallbackClip) : "";
+  const fallbackActionFromText = SPECIAL_PERFORMER_ACTION_IDS.has(fallbackText)
+    ? fallbackText
+    : clipIdFromActionId(fallbackText)
+      ? clipActionId(clipIdFromActionId(fallbackText))
+      : "";
+  const resolvedFallback = fallbackActionFromClip || fallbackActionFromText;
+
+  const text = String(raw || "").trim().toLowerCase();
+  if (!text) return resolvedFallback;
+
+  if (SPECIAL_PERFORMER_ACTION_IDS.has(text)) {
+    return text;
+  }
+
+  const clipFromAction = clipIdFromActionId(text);
+  if (clipFromAction) {
+    return clipActionId(clipFromAction);
+  }
+
+  const numericClipId = sanitizeClipId(text, 0);
+  if (numericClipId) {
+    return clipActionId(numericClipId);
+  }
+
+  return resolvedFallback;
+}
+
 function clampNumber(value, min, max) {
   const n = Number(value);
   if (!Number.isFinite(n)) return min;
@@ -205,7 +248,8 @@ function makeRoomIfNeeded(roomId) {
       playing: false,
       startedAt: 0,
       by: null,
-      activeClip: 0
+      activeClip: 0,
+      activeAction: ""
     },
     doorOpen: true,
     fxState: {
@@ -468,8 +512,10 @@ function handlePerformerClip(socket, payload) {
     return;
   }
 
-  const clipId = sanitizeClipId(payload?.clipId);
-  if (!clipId) {
+  const fallbackClipId = sanitizeClipId(payload?.clipId, room.showState.activeClip || 0);
+  const fallbackActionId = room.showState.activeAction || clipActionId(fallbackClipId || room.showState.activeClip || 0);
+  const actionId = sanitizePerformerActionId(payload?.actionId, fallbackActionId);
+  if (!actionId) {
     socket.emit("room:error", {
       code: "INVALID_CLIP",
       message: "유효하지 않은 클립 번호입니다.",
@@ -478,14 +524,18 @@ function handlePerformerClip(socket, payload) {
     return;
   }
 
+  const clipId = clipIdFromActionId(actionId) || fallbackClipId;
   room.showState.activeClip = clipId;
+  room.showState.activeAction = actionId;
   socket.to(room.key).emit("performer:clip", {
     roomId: room.roomId,
     hostId: room.hostId,
     clipId,
+    actionId,
     startedAt: Date.now(),
     ts: Date.now()
   });
+  emitSnapshot(room);
 }
 function handleDoorSet(socket, payload) {
   const roomId = socketToRoom.get(socket.id);
@@ -596,13 +646,17 @@ function handleShowStart(socket, payload) {
     return;
   }
 
-  const requestedClipId = sanitizeClipId(payload?.activeClip, room.showState.activeClip || 0);
+  const fallbackClipId = sanitizeClipId(payload?.activeClip, room.showState.activeClip || CLIP_ID_MIN);
+  const fallbackActionId = room.showState.activeAction || clipActionId(fallbackClipId || room.showState.activeClip || CLIP_ID_MIN);
+  const requestedActionId = sanitizePerformerActionId(payload?.activeAction, fallbackActionId);
+  const requestedClipId = clipIdFromActionId(requestedActionId) || fallbackClipId || CLIP_ID_MIN;
 
   room.showState = {
     playing: true,
     startedAt: Date.now(),
     by: socket.id,
-    activeClip: requestedClipId
+    activeClip: requestedClipId,
+    activeAction: requestedActionId || clipActionId(requestedClipId)
   };
 
   io.to(room.key).emit("show:state", {
@@ -633,7 +687,8 @@ function handleShowStop(socket) {
     playing: false,
     startedAt: 0,
     by: socket.id,
-    activeClip: 0
+    activeClip: room.showState.activeClip,
+    activeAction: room.showState.activeAction || ""
   };
 
   io.to(room.key).emit("show:state", {

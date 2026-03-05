@@ -7,6 +7,41 @@
   const CLIP_IDS = Array.from({ length: 10 }, (_, index) => index + 1);
   const CLIP_VIDEO_PATHS = Object.fromEntries(CLIP_IDS.map((id) => [id, `./WEBM/${id}_alpha.webm`]));
   const DEFAULT_CLIP_ID = 1;
+  const DEFAULT_PERFORMER_ACTION_ID = `clip:${DEFAULT_CLIP_ID}`;
+  const PERFORMER_BASE_POSITION = Object.freeze({ x: 0, y: 5.6, z: -55.6 });
+  const PERFORMER_LEFT_ENTRY_X = -22.5;
+  const SPECIAL_PERFORMER_ACTIONS = Object.freeze({
+    walk_in: {
+      src: "./WEBM/0-0_alpha.webm",
+      startTime: 0,
+      moveFromX: PERFORMER_LEFT_ENTRY_X,
+      moveToX: PERFORMER_BASE_POSITION.x,
+      moveDuration: 8.4,
+      mirrorX: false
+    },
+    idle_hold: {
+      src: "./WEBM/0-1_alpha.webm",
+      freezeAt: 2,
+      holdX: PERFORMER_BASE_POSITION.x,
+      mirrorX: false
+    },
+    greet: {
+      src: "./WEBM/0-1_alpha.webm",
+      startTime: 3,
+      endTime: 10,
+      holdX: PERFORMER_BASE_POSITION.x,
+      mirrorX: false
+    },
+    walk_out: {
+      src: "./WEBM/0-0_alpha.webm",
+      startTime: 0,
+      moveFromX: PERFORMER_BASE_POSITION.x,
+      moveToX: PERFORMER_LEFT_ENTRY_X,
+      moveDuration: 8.4,
+      mirrorX: true
+    }
+  });
+  const SPECIAL_PERFORMER_ACTION_IDS = Object.freeze(Object.keys(SPECIAL_PERFORMER_ACTIONS));
   const QUEUE_STORAGE_KEY = "performance_choreo_queue_v1";
   const CHROMA_KEY_CONFIG = {
     keyColor: [0.06, 0.95, 0.08],
@@ -89,6 +124,7 @@
     hostDoorBtn: document.getElementById("host-door-btn"),
     returnLobbyBtn: document.getElementById("return-lobby-btn"),
     clipButtons: Array.from(document.querySelectorAll("[data-clip-id]")),
+    performerActionButtons: Array.from(document.querySelectorAll("[data-performer-action]")),
     queueRecordBtn: document.getElementById("queue-record-btn"),
     queuePlayBtn: document.getElementById("queue-play-btn"),
     queueLoopBtn: document.getElementById("queue-loop-btn"),
@@ -277,6 +313,8 @@
   let showPlaying = false;
   let screenVideoEnabled = false;
   let currentClipId = DEFAULT_CLIP_ID;
+  let currentPerformerActionId = DEFAULT_PERFORMER_ACTION_ID;
+  let performerActionRuntime = null;
   let queueEvents = [];
   let queuePlayIndex = 0;
   let queueRecording = false;
@@ -321,6 +359,7 @@
   let lastNetworkShowPlaying = null;
   let lastNetworkShowStartedAtMs = 0;
   let lastNetworkActiveClipId = 0;
+  let lastNetworkActiveActionId = "";
   let clientDisplayName = requestedPlayerName || ("\uD50C\uB808\uC774\uC5B4-" + Math.floor(Math.random() * 9000 + 1000));
   let nicknameGateResolved = false;
   let nicknameGatePromise = null;
@@ -469,6 +508,14 @@
     });
   });
 
+  dom.performerActionButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const actionId = String(button.dataset.performerAction || "").trim();
+      if (!actionId) return;
+      playPerformerAction(actionId, { record: true });
+    });
+  });
+
   if (dom.queueRecordBtn) {
     dom.queueRecordBtn.addEventListener("click", () => toggleQueueRecording());
   }
@@ -534,7 +581,9 @@
           showPlaying,
           queuePlaying,
           currentClipId,
+          currentPerformerActionId,
           lastNetworkActiveClipId,
+          lastNetworkActiveActionId,
           playerFootY,
           playerVelocityY,
           playerGrounded,
@@ -1503,9 +1552,9 @@ function applyQuality() {
     chromaVideoReady = true;
 
     if (showPlaying && activeMap === "hall") {
-      const autoClipId = normalizeClipId(currentClipId) || DEFAULT_CLIP_ID;
+      const autoActionId = normalizePerformerActionId(currentPerformerActionId) || DEFAULT_PERFORMER_ACTION_ID;
       if (!socketConnected || isHostClient) {
-        playPerformerClip(autoClipId, {
+        playPerformerAction(autoActionId, {
           record: false,
           broadcast: socketConnected && isHostClient,
           silent: true
@@ -1542,6 +1591,7 @@ function applyQuality() {
     pendingShowStartFromHost = false;
     lastNetworkShowStartedAtMs = 0;
     lastNetworkActiveClipId = 0;
+    lastNetworkActiveActionId = "";
     setScreenVideoEnabled(false);
 
     if (stageVideo) {
@@ -1555,6 +1605,7 @@ function applyQuality() {
     if (hallMap.performerPlane) {
       hallMap.performerPlane.visible = false;
     }
+    resetPerformerRuntime();
 
     queuePlaying = false;
     queuePlayIndex = 0;
@@ -1633,15 +1684,17 @@ function applyQuality() {
     if (hallMap.performerPlane) {
       hallMap.performerPlane.visible = false;
     }
+    resetPerformerRuntime();
     if (queuePlaying) {
       queuePlayIndex = 0;
     }
 
     updateShowStartButton();
 
-    const startClipId = normalizeClipId(currentClipId) || DEFAULT_CLIP_ID;
+    const startActionId = normalizePerformerActionId(currentPerformerActionId) || DEFAULT_PERFORMER_ACTION_ID;
+    const startClipId = clipIdFromActionId(startActionId) || normalizeClipId(currentClipId) || DEFAULT_CLIP_ID;
     if (!socketConnected || isHostClient) {
-      playPerformerClip(startClipId, {
+      playPerformerAction(startActionId, {
         record: false,
         broadcast: socketConnected && isHostClient && broadcast,
         silent: true
@@ -1649,7 +1702,7 @@ function applyQuality() {
     }
 
     if (broadcast && socketConnected && isHostClient && socket) {
-      socket.emit("show:start", { activeClip: startClipId });
+      socket.emit("show:start", { activeClip: startClipId, activeAction: startActionId });
     }
 
     applyLatestNetworkClip();
@@ -1657,12 +1710,10 @@ function applyQuality() {
 
   function syncShowMediaState() {
     const inHall = activeMap === "hall";
-    if (!inHall || !showPlaying) {
-      if (!inHall) {
-        queueRecording = false;
-        queuePlaying = false;
-        queuePlayIndex = 0;
-      }
+    if (!inHall) {
+      queueRecording = false;
+      queuePlaying = false;
+      queuePlayIndex = 0;
       setScreenVideoEnabled(false);
       if (stageVideo) {
         stageVideo.pause();
@@ -1672,6 +1723,16 @@ function applyQuality() {
       }
       if (hallMap.performerPlane) {
         hallMap.performerPlane.visible = false;
+      }
+      resetPerformerRuntime();
+      updateQueueUi();
+      return;
+    }
+
+    if (!showPlaying) {
+      setScreenVideoEnabled(false);
+      if (stageVideo) {
+        stageVideo.pause();
       }
       updateQueueUi();
       return;
@@ -1722,19 +1783,186 @@ function applyQuality() {
     return clipId;
   }
 
+  function getClipActionId(clipId) {
+    const safeClipId = normalizeClipId(clipId);
+    return safeClipId ? `clip:${safeClipId}` : "";
+  }
+
+  function clipIdFromActionId(actionId) {
+    const text = String(actionId || "").trim().toLowerCase();
+    if (!text) return 0;
+    if (text.startsWith("clip:")) {
+      return normalizeClipId(text.slice(5));
+    }
+    return 0;
+  }
+
+  function normalizePerformerActionId(value) {
+    const text = String(value || "").trim().toLowerCase();
+    if (!text) return "";
+
+    const fromClipAction = clipIdFromActionId(text);
+    if (fromClipAction) {
+      return getClipActionId(fromClipAction);
+    }
+
+    const numeric = normalizeClipId(text);
+    if (numeric) {
+      return getClipActionId(numeric);
+    }
+
+    if (SPECIAL_PERFORMER_ACTION_IDS.includes(text)) {
+      return text;
+    }
+    return "";
+  }
+
+  function getPerformerActionConfig(actionId) {
+    const normalized = normalizePerformerActionId(actionId);
+    if (!normalized) return null;
+
+    const clipId = clipIdFromActionId(normalized);
+    if (clipId) {
+      return {
+        id: normalized,
+        clipId,
+        src: CLIP_VIDEO_PATHS[clipId],
+        startTime: 0,
+        mirrorX: false,
+        holdX: PERFORMER_BASE_POSITION.x
+      };
+    }
+
+    const def = SPECIAL_PERFORMER_ACTIONS[normalized];
+    if (!def) return null;
+
+    return {
+      id: normalized,
+      clipId: 0,
+      src: String(def.src || ""),
+      startTime: Number(def.startTime) || 0,
+      endTime: Number(def.endTime),
+      freezeAt: Number(def.freezeAt),
+      holdX: Number.isFinite(def.holdX) ? Number(def.holdX) : PERFORMER_BASE_POSITION.x,
+      moveFromX: Number(def.moveFromX),
+      moveToX: Number(def.moveToX),
+      moveDuration: Number(def.moveDuration),
+      mirrorX: Boolean(def.mirrorX)
+    };
+  }
+
+  function applyPerformerTransform(x, mirrorX) {
+    if (!hallMap.performerPlane) return;
+    hallMap.performerPlane.position.set(
+      Number.isFinite(x) ? x : PERFORMER_BASE_POSITION.x,
+      PERFORMER_BASE_POSITION.y,
+      PERFORMER_BASE_POSITION.z
+    );
+    hallMap.performerPlane.scale.set(mirrorX ? -1 : 1, 1, 1);
+  }
+
+  function resetPerformerRuntime() {
+    performerActionRuntime = null;
+    applyPerformerTransform(PERFORMER_BASE_POSITION.x, false);
+  }
+
+  function updatePerformerRuntime(nowSeconds) {
+    if (!performerActionRuntime || !hallMap.performerPlane || !hallMap.performerPlane.visible) {
+      return;
+    }
+
+    const runtime = performerActionRuntime;
+    if (
+      Number.isFinite(runtime.moveFromX) &&
+      Number.isFinite(runtime.moveToX) &&
+      Number.isFinite(runtime.moveDuration) &&
+      runtime.moveDuration > 0
+    ) {
+      const elapsed = Math.max(0, nowSeconds - runtime.startedAt);
+      const linear = clampNumber(elapsed / runtime.moveDuration, 0, 1);
+      const eased = linear < 0.5 ? 2 * linear * linear : 1 - Math.pow(-2 * linear + 2, 2) / 2;
+      const x = runtime.moveFromX + (runtime.moveToX - runtime.moveFromX) * eased;
+      applyPerformerTransform(x, runtime.mirrorX);
+    }
+
+    if (Number.isFinite(runtime.endTime) && chromaVideo) {
+      if (chromaVideo.currentTime >= runtime.endTime - 0.02) {
+        chromaVideo.pause();
+        chromaVideo.currentTime = runtime.endTime;
+      }
+    }
+  }
+
+  function seekAndFreezeChroma(timeSec) {
+    if (!chromaVideo) return;
+
+    const freeze = () => {
+      const rawTarget = Number(timeSec) || 0;
+      const safeTarget = Number.isFinite(chromaVideo.duration) && chromaVideo.duration > 0
+        ? clampNumber(rawTarget, 0, Math.max(0, chromaVideo.duration - 0.05))
+        : Math.max(0, rawTarget);
+      const finalize = () => {
+        chromaVideo.pause();
+        chromaVideo.currentTime = safeTarget;
+      };
+
+      const onSeeked = () => finalize();
+      chromaVideo.addEventListener("seeked", onSeeked, { once: true });
+      chromaVideo.currentTime = safeTarget;
+      setTimeout(() => {
+        if (Math.abs((Number(chromaVideo.currentTime) || 0) - safeTarget) < 0.08) {
+          finalize();
+        }
+      }, 80);
+    };
+
+    if (chromaVideo.readyState >= 1) {
+      freeze();
+    } else {
+      chromaVideo.addEventListener("loadedmetadata", freeze, { once: true });
+    }
+  }
+
+  function setCurrentPerformerAction(actionId, options = {}) {
+    const { fromNetwork = false } = options;
+    const normalized = normalizePerformerActionId(actionId) || DEFAULT_PERFORMER_ACTION_ID;
+    currentPerformerActionId = normalized;
+    const numericClipId = clipIdFromActionId(normalized);
+    if (numericClipId) {
+      currentClipId = numericClipId;
+    }
+    if (fromNetwork) {
+      lastNetworkActiveActionId = normalized;
+      lastNetworkActiveClipId = numericClipId;
+    }
+    updateClipButtons();
+  }
+
   function applyLatestNetworkClip(options = {}) {
     const { force = false } = options;
     if (!socketConnected || isHostClient) return;
-    if (!showPlaying || activeMap !== "hall") return;
-    const clipId = normalizeClipId(lastNetworkActiveClipId);
-    if (!clipId) return;
+    if (activeMap !== "hall") return;
+    const fallbackAction = getClipActionId(lastNetworkActiveClipId);
+    const actionId = normalizePerformerActionId(lastNetworkActiveActionId || fallbackAction);
+    if (!actionId) return;
 
     const alreadyVisible =
-      currentClipId === clipId &&
+      currentPerformerActionId === actionId &&
       Boolean(hallMap.performerPlane && hallMap.performerPlane.visible);
     if (!force && alreadyVisible) return;
 
-    playPerformerClip(clipId, {
+    const clipId = clipIdFromActionId(actionId);
+    if (clipId) {
+      playPerformerClip(clipId, {
+        record: false,
+        broadcast: false,
+        fromNetwork: true,
+        silent: true
+      });
+      return;
+    }
+
+    playPerformerAction(actionId, {
       record: false,
       broadcast: false,
       fromNetwork: true,
@@ -1742,7 +1970,7 @@ function applyQuality() {
     });
   }
 
-  function playPerformerClip(clipId, options = {}) {
+  function playPerformerAction(actionId, options = {}) {
     const {
       record = true,
       broadcast = socketConnected && isHostClient,
@@ -1762,8 +1990,8 @@ function applyQuality() {
       return;
     }
 
-    const nextClipId = normalizeClipId(clipId);
-    if (!nextClipId) {
+    const config = getPerformerActionConfig(actionId);
+    if (!config || !config.src) {
       return;
     }
 
@@ -1774,15 +2002,15 @@ function applyQuality() {
       return;
     }
 
-    const nextSrc = CLIP_VIDEO_PATHS[nextClipId];
     const currentSrc = String(chromaVideo.getAttribute("src") || "");
-    if (currentSrc !== nextSrc) {
+    if (currentSrc !== config.src) {
       chromaVideo.pause();
-      chromaVideo.setAttribute("src", nextSrc);
+      chromaVideo.setAttribute("src", config.src);
       chromaVideo.load();
     }
 
-    chromaVideo.currentTime = 0;
+    const startTime = Math.max(0, Number(config.startTime) || 0);
+    chromaVideo.currentTime = startTime;
     const playPromise = chromaVideo.play();
     if (playPromise && typeof playPromise.catch === "function") {
       playPromise.catch(() => {
@@ -1796,19 +2024,36 @@ function applyQuality() {
       });
     }
 
+    if (Number.isFinite(config.freezeAt)) {
+      seekAndFreezeChroma(config.freezeAt);
+    }
+
     if (hallMap.performerPlane) {
       hallMap.performerPlane.visible = true;
     }
 
-    currentClipId = nextClipId;
-    if (fromNetwork) {
-      lastNetworkActiveClipId = nextClipId;
+    if (Number.isFinite(config.holdX)) {
+      applyPerformerTransform(config.holdX, config.mirrorX);
+    } else {
+      applyPerformerTransform(PERFORMER_BASE_POSITION.x, config.mirrorX);
     }
-    updateClipButtons();
+
+    performerActionRuntime = {
+      id: config.id,
+      startedAt: performance.now() / 1000,
+      moveFromX: config.moveFromX,
+      moveToX: config.moveToX,
+      moveDuration: config.moveDuration,
+      endTime: Number.isFinite(config.endTime) ? config.endTime : NaN,
+      mirrorX: Boolean(config.mirrorX)
+    };
+
+    setCurrentPerformerAction(config.id, { fromNetwork });
 
     if (broadcast && socketConnected && isHostClient && socket && !fromNetwork) {
       socket.emit("performer:clip", {
-        clipId: nextClipId,
+        clipId: config.clipId || 0,
+        actionId: config.id,
         songTime: Number(getSongTimeSeconds().toFixed(3)),
         ts: Date.now()
       });
@@ -1819,10 +2064,18 @@ function applyQuality() {
         startShow();
       }
       const eventTime = Number(getSongTimeSeconds().toFixed(3));
-      queueEvents.push({ t: eventTime, clip: nextClipId });
+      queueEvents.push({ t: eventTime, action: config.id });
       queueEvents.sort((a, b) => a.t - b.t);
       updateQueueUi(`${queueEvents.length}\uAC1C \uD050 \uC800\uC7A5`);
     }
+  }
+
+  function playPerformerClip(clipId, options = {}) {
+    const nextClipId = normalizeClipId(clipId);
+    if (!nextClipId) {
+      return;
+    }
+    playPerformerAction(getClipActionId(nextClipId), options);
   }
 
 function toggleQueueRecording() {
@@ -1874,7 +2127,7 @@ function startQueuePlayback(resetSong) {
     updateQueueUi("\uD050 \uC7AC\uC0DD \uC2DC\uC791");
   }
 
-function processQueuePlayback() {
+  function processQueuePlayback() {
     if (!queuePlaying || !showPlaying || !stageVideo) {
       return;
     }
@@ -1882,7 +2135,10 @@ function processQueuePlayback() {
     const now = getSongTimeSeconds();
     while (queuePlayIndex < queueEvents.length && now >= queueEvents[queuePlayIndex].t - 0.005) {
       const event = queueEvents[queuePlayIndex];
-      playPerformerClip(event.clip, { record: false });
+      const actionId = normalizePerformerActionId(event.action || event.clip);
+      if (actionId) {
+        playPerformerAction(actionId, { record: false });
+      }
       queuePlayIndex += 1;
     }
 
@@ -1926,11 +2182,11 @@ function loadQueueFromStorage(silent) {
       const source = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.events) ? parsed.events : [];
       queueEvents = source
         .map((entry) => {
-          const clip = Number(entry?.clip);
+          const action = normalizePerformerActionId(entry?.action || entry?.clip);
           const t = Number(entry?.t ?? entry?.time);
-          return { clip, t };
+          return { action, t };
         })
-        .filter((entry) => Number.isInteger(entry.clip) && entry.clip >= 1 && entry.clip <= CLIP_IDS.length && Number.isFinite(entry.t) && entry.t >= 0)
+        .filter((entry) => Boolean(entry.action) && Number.isFinite(entry.t) && entry.t >= 0)
         .sort((a, b) => a.t - b.t);
 
       queuePlayIndex = 0;
@@ -1963,9 +2219,16 @@ function canControlShowOps() {
 
 function updateClipButtons() {
     const canControl = canControlShowOps();
+    const normalizedCurrentAction = normalizePerformerActionId(currentPerformerActionId);
     dom.clipButtons.forEach((button) => {
       const clipId = Number(button.dataset.clipId || 0);
-      button.classList.toggle("active", clipId === currentClipId);
+      const actionId = getClipActionId(clipId);
+      button.classList.toggle("active", actionId !== "" && actionId === normalizedCurrentAction);
+      button.disabled = activeMap !== "hall" || !canControl;
+    });
+    dom.performerActionButtons.forEach((button) => {
+      const actionId = normalizePerformerActionId(button.dataset.performerAction || "");
+      button.classList.toggle("active", actionId !== "" && actionId === normalizedCurrentAction);
       button.disabled = activeMap !== "hall" || !canControl;
     });
   }
@@ -2503,6 +2766,7 @@ function clampNumber(value, min, max) {
     updateDoorVisuals();
     updateRemotePlayers(elapsed, delta);
     processQueuePlayback();
+    updatePerformerRuntime(elapsed);
 
     if (firstPersonEnabled) {
       updateFirstPersonMovement(delta);
@@ -2842,24 +3106,38 @@ function applyShowStateFromNetwork(showState, force) {
     const nextPlaying = Boolean(showState && showState.playing);
     const startedAt = Number((showState && showState.startedAt) || 0);
     const activeClipId = normalizeClipId(showState && showState.activeClip);
+    const activeActionId = normalizePerformerActionId((showState && showState.activeAction) || getClipActionId(activeClipId));
     const showChanged = lastNetworkShowPlaying !== nextPlaying;
+    const actionChanged = Boolean(activeActionId) && activeActionId !== lastNetworkActiveActionId;
     const clipChanged = activeClipId > 0 && activeClipId !== lastNetworkActiveClipId;
-
-    if (!force && !showChanged && !clipChanged) {
-      return;
-    }
+    let showStopped = false;
 
     if (startedAt > 0) {
       lastNetworkShowStartedAtMs = startedAt;
     }
 
-    if (!nextPlaying) {
-      lastNetworkActiveClipId = 0;
+    if (activeActionId) {
+      lastNetworkActiveActionId = activeActionId;
+      const actionClipId = clipIdFromActionId(activeActionId);
+      lastNetworkActiveClipId = actionClipId || activeClipId;
     } else if (activeClipId > 0) {
       lastNetworkActiveClipId = activeClipId;
+      lastNetworkActiveActionId = getClipActionId(activeClipId);
     }
 
-    if (!showChanged && !force && nextPlaying && clipChanged) {
+    if (!force && !showChanged && !clipChanged && !actionChanged) {
+      return;
+    }
+
+    if (!nextPlaying && showChanged) {
+      stopShowLocal({ broadcast: false });
+      showStopped = true;
+      if (showChanged) {
+        updateQueueUi("\uD638\uC2A4\uD2B8\uAC00 \uACF5\uC5F0\uC744 \uC911\uC9C0\uD588\uC2B5\uB2C8\uB2E4.");
+      }
+    }
+
+    if (!showChanged && !force && nextPlaying && (clipChanged || actionChanged)) {
       applyLatestNetworkClip({ force: true });
       return;
     }
@@ -2880,8 +3158,33 @@ function applyShowStateFromNetwork(showState, force) {
       return;
     }
 
-    stopShowLocal({ broadcast: false });
-    updateQueueUi("\uD638\uC2A4\uD2B8\uAC00 \uACF5\uC5F0\uC744 \uC911\uC9C0\uD588\uC2B5\uB2C8\uB2E4.");
+    if (activeActionId) {
+      if (activeMap === "hall") {
+        const actionClipId = clipIdFromActionId(activeActionId);
+        if (actionClipId) {
+          playPerformerClip(actionClipId, {
+            record: false,
+            broadcast: false,
+            fromNetwork: true,
+            silent: true
+          });
+        } else {
+          playPerformerAction(activeActionId, {
+            record: false,
+            broadcast: false,
+            fromNetwork: true,
+            silent: true
+          });
+        }
+      } else {
+        setCurrentPerformerAction(activeActionId, { fromNetwork: true });
+      }
+      return;
+    }
+
+    if ((showChanged || force) && !showStopped) {
+      stopShowLocal({ broadcast: false });
+    }
   }
 
 function setupRealtime() {
@@ -2976,20 +3279,29 @@ function setupRealtime() {
     });
 
     socket.on("performer:clip", (payload) => {
-      const clipId = normalizeClipId(payload && payload.clipId);
-      if (!clipId) return;
-
+      const actionId = normalizePerformerActionId((payload && payload.actionId) || (payload && payload.clipId));
+      if (!actionId) return;
+      const clipId = clipIdFromActionId(actionId);
+      lastNetworkActiveActionId = actionId;
       lastNetworkActiveClipId = clipId;
-      if (showPlaying && activeMap === "hall") {
-        playPerformerClip(clipId, {
-          record: false,
-          broadcast: false,
-          fromNetwork: true,
-          silent: true
-        });
+      if (activeMap === "hall") {
+        if (clipId) {
+          playPerformerClip(clipId, {
+            record: false,
+            broadcast: false,
+            fromNetwork: true,
+            silent: true
+          });
+        } else {
+          playPerformerAction(actionId, {
+            record: false,
+            broadcast: false,
+            fromNetwork: true,
+            silent: true
+          });
+        }
       } else {
-        currentClipId = clipId;
-        updateClipButtons();
+        setCurrentPerformerAction(actionId, { fromNetwork: true });
       }
     });
 

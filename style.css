@@ -385,7 +385,14 @@ p {
   gap: 6px;
 }
 
+.clip-special-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
 .clip-grid button,
+.clip-special-grid button,
 .queue-grid button {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
@@ -399,13 +406,15 @@ p {
 }
 
 .clip-grid button:hover,
+.clip-special-grid button:hover,
 .queue-grid button:hover {
   transform: translateY(-1px);
   border-color: rgba(255, 255, 255, 0.32);
   background: rgba(255, 255, 255, 0.14);
 }
 
-.clip-grid button.active {
+.clip-grid button.active,
+.clip-special-grid button.active {
   border-color: rgba(255, 180, 92, 0.9);
   background: linear-gradient(140deg, rgba(255, 123, 84, 0.32), rgba(255, 202, 113, 0.26));
 }

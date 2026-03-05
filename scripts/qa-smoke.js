@@ -176,6 +176,24 @@ async function checkRealtimeFlow(checks) {
       detail: showState
     });
 
+    const performerActionRecv = onceWithTimeout(player.socket, 'performer:clip', 8000);
+    host.socket.emit('performer:clip', { actionId: 'greet', ts: Date.now() });
+    const performerActionPayload = await performerActionRecv;
+    checks.push({
+      name: 'performer_action_broadcast',
+      ok: performerActionPayload && performerActionPayload.actionId === 'greet',
+      detail: performerActionPayload
+    });
+
+    const performerHostOnlyErrPromise = onceWithTimeout(player.socket, 'room:error', 8000);
+    player.socket.emit('performer:clip', { actionId: 'walk_out', ts: Date.now() });
+    const performerHostOnlyErr = await performerHostOnlyErrPromise;
+    checks.push({
+      name: 'performer_host_only_guard',
+      ok: performerHostOnlyErr && performerHostOnlyErr.code === 'HOST_ONLY',
+      detail: performerHostOnlyErr
+    });
+
     const fxStateRecv = onceWithTimeout(player.socket, 'fx:state', 8000);
     host.socket.emit('fx:set', { particles: false, lights: false, ts: Date.now() });
     const fxStatePayload = await fxStateRecv;
