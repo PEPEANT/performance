@@ -67,6 +67,12 @@
     spill: 1.22,
     despill: 1.62
   };
+  const STAGE_AUDIO_MASTER_GAIN = 1.68;
+  const STAGE_AUDIO_DRY_GAIN = 0.98;
+  const STAGE_AUDIO_WET_GAIN = 0.56;
+  const STAGE_AUDIO_REVERB_SECONDS = 2.25;
+  const STAGE_AUDIO_REVERB_DECAY = 2.75;
+  const STAGE_AUDIO_REVERB_PREDELAY_SECONDS = 0.03;
 
   const SHOW_MODES = {
     rehearsal: { crowdBounce: 0.14, screenPulse: 0.1, lightBoost: 0.72, fireworksRate: 0.18, fireworkBurstScale: 0.65, strobeStrength: 0.18 },
@@ -407,6 +413,14 @@
   let stageVideo = null;
   let stageVideoTexture = null;
   let stageVideoReady = false;
+  let stageAudioContext = null;
+  let stageAudioSourceNode = null;
+  let stageAudioConvolverNode = null;
+  let stageAudioDryGainNode = null;
+  let stageAudioWetGainNode = null;
+  let stageAudioMasterGainNode = null;
+  let stageAudioCompressorNode = null;
+  let stageAudioGraphReady = false;
   let activeShowVideoPath = SHOW_VIDEO_PATH;
   let showVideoMobileFallbackTried = false;
   let stageVideoAwaitingUnmuteGesture = false;
@@ -480,7 +494,13 @@
 
   dom.portalActionBtn.addEventListener("click", () => handleLobbyInteract());
   if (dom.showStartBtn) {
-    dom.showStartBtn.addEventListener("click", () => startShow({ broadcast: true }));
+    dom.showStartBtn.addEventListener("click", () => {
+      if (showPlaying) {
+        stopShowLocal({ broadcast: true });
+      } else {
+        startShow({ broadcast: true });
+      }
+    });
   }
   if (dom.hostDoorBtn) {
     dom.hostDoorBtn.addEventListener("click", () => {
@@ -1847,6 +1867,108 @@ function applyQuality() {
     updateHud();
   }
 
+  function createStageReverbImpulseBuffer(audioContext, seconds, decay, preDelaySeconds) {
+    const durationSeconds = Math.max(0.6, Number(seconds) || 2.25);
+    const decayPower = Math.max(0.6, Number(decay) || 2.75);
+    const preDelay = Math.max(0, Number(preDelaySeconds) || 0);
+    const sampleRate = audioContext.sampleRate || 48000;
+    const frameCount = Math.max(1, Math.floor(sampleRate * durationSeconds));
+    const impulse = audioContext.createBuffer(2, frameCount, sampleRate);
+    const preDelayFrames = Math.floor(preDelay * sampleRate);
+
+    for (let channel = 0; channel < impulse.numberOfChannels; channel += 1) {
+      const data = impulse.getChannelData(channel);
+      for (let i = 0; i < frameCount; i += 1) {
+        if (i < preDelayFrames) {
+          data[i] = 0;
+          continue;
+        }
+        const t = (i - preDelayFrames) / Math.max(1, frameCount - preDelayFrames);
+        const envelope = Math.pow(1 - t, decayPower);
+        data[i] = (Math.random() * 2 - 1) * envelope;
+      }
+    }
+
+    return impulse;
+  }
+
+  function ensureStageVideoAudioGraph() {
+    if (!stageVideo) return false;
+    if (stageAudioGraphReady && stageAudioContext && stageAudioSourceNode) {
+      return true;
+    }
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+      return false;
+    }
+
+    try {
+      if (!stageAudioContext) {
+        stageAudioContext = new AudioContextCtor();
+      }
+      if (!stageAudioSourceNode) {
+        stageAudioSourceNode = stageAudioContext.createMediaElementSource(stageVideo);
+      }
+      if (!stageAudioConvolverNode) {
+        stageAudioConvolverNode = stageAudioContext.createConvolver();
+        stageAudioConvolverNode.buffer = createStageReverbImpulseBuffer(
+          stageAudioContext,
+          STAGE_AUDIO_REVERB_SECONDS,
+          STAGE_AUDIO_REVERB_DECAY,
+          STAGE_AUDIO_REVERB_PREDELAY_SECONDS
+        );
+      }
+      if (!stageAudioDryGainNode) {
+        stageAudioDryGainNode = stageAudioContext.createGain();
+      }
+      if (!stageAudioWetGainNode) {
+        stageAudioWetGainNode = stageAudioContext.createGain();
+      }
+      if (!stageAudioMasterGainNode) {
+        stageAudioMasterGainNode = stageAudioContext.createGain();
+      }
+      if (!stageAudioCompressorNode) {
+        stageAudioCompressorNode = stageAudioContext.createDynamicsCompressor();
+        stageAudioCompressorNode.threshold.value = -18;
+        stageAudioCompressorNode.knee.value = 22;
+        stageAudioCompressorNode.ratio.value = 3.2;
+        stageAudioCompressorNode.attack.value = 0.007;
+        stageAudioCompressorNode.release.value = 0.3;
+      }
+
+      stageAudioDryGainNode.gain.value = STAGE_AUDIO_DRY_GAIN;
+      stageAudioWetGainNode.gain.value = STAGE_AUDIO_WET_GAIN;
+      stageAudioMasterGainNode.gain.value = STAGE_AUDIO_MASTER_GAIN;
+
+      stageAudioSourceNode.disconnect();
+      stageAudioDryGainNode.disconnect();
+      stageAudioWetGainNode.disconnect();
+      stageAudioConvolverNode.disconnect();
+      stageAudioMasterGainNode.disconnect();
+      stageAudioCompressorNode.disconnect();
+
+      stageAudioSourceNode.connect(stageAudioDryGainNode);
+      stageAudioSourceNode.connect(stageAudioConvolverNode);
+      stageAudioConvolverNode.connect(stageAudioWetGainNode);
+      stageAudioDryGainNode.connect(stageAudioMasterGainNode);
+      stageAudioWetGainNode.connect(stageAudioMasterGainNode);
+      stageAudioMasterGainNode.connect(stageAudioCompressorNode);
+      stageAudioCompressorNode.connect(stageAudioContext.destination);
+      stageAudioGraphReady = true;
+      return true;
+    } catch (error) {
+      stageAudioGraphReady = false;
+      return false;
+    }
+  }
+
+  function resumeStageVideoAudioGraph() {
+    if (!ensureStageVideoAudioGraph() || !stageAudioContext) return;
+    if (stageAudioContext.state === "suspended") {
+      stageAudioContext.resume().catch(() => {});
+    }
+  }
+
   function setupShowMedia() {
     const bg = document.createElement("video");
     bg.src = activeShowVideoPath;
@@ -1859,6 +1981,7 @@ function applyQuality() {
     bg.crossOrigin = "anonymous";
     bg.setAttribute("webkit-playsinline", "true");
     stageVideo = bg;
+    ensureStageVideoAudioGraph();
 
     bg.addEventListener(
       "canplay",
@@ -2072,6 +2195,7 @@ function applyQuality() {
     stageVideo.volume = 1.0;
     stageVideoAwaitingUnmuteGesture = false;
     setScreenVideoEnabled(true);
+    resumeStageVideoAudioGraph();
 
     const stagePlay = stageVideo.play();
     if (stagePlay && typeof stagePlay.catch === "function") {
@@ -2245,6 +2369,7 @@ function applyQuality() {
   }
 
   function tryRestoreStageVideoAudio() {
+    resumeStageVideoAudioGraph();
     if (!stageVideoAwaitingUnmuteGesture || !stageVideo || !showPlaying) {
       return;
     }
@@ -2827,7 +2952,7 @@ function updateShowStartButton() {
     }
 
     dom.showStartBtn.disabled = false;
-    dom.showStartBtn.textContent = showPlaying ? "공연 재시작" : "공연 시작";
+    dom.showStartBtn.textContent = showPlaying ? "공연 중지" : "공연 시작";
   }
 
 function updateHud() {
