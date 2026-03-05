@@ -174,6 +174,7 @@
     mobileJumpBtn: document.getElementById("mobile-jump"),
     mobileSprintBtn: document.getElementById("mobile-sprint"),
     mobileChatBtn: document.getElementById("mobile-chat"),
+    mobileReturnBtn: document.getElementById("mobile-return"),
     portalTransition: document.getElementById("portal-transition"),
     portalTransitionLabel: document.getElementById("portal-transition-label"),
     portalTransitionTitle: document.getElementById("portal-transition-title"),
@@ -396,27 +397,10 @@
       setDoorOpen(!doorOpen);
     });
   }
-  dom.returnLobbyBtn.addEventListener("click", () => {
-    if (activeMap === "hall") {
-      setMap("lobby", false);
-      return;
-    }
-
-    const lobbyReturnUrl = buildLobbyReturnUrl();
-    if (lobbyReturnUrl) {
-      window.location.assign(lobbyReturnUrl);
-      return;
-    }
-
-    dom.loading.textContent = "\uBCF5\uADC0 URL\uC774 \uC124\uC815\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
-    dom.loading.classList.remove("hidden");
-    setTimeout(() => {
-      if (!transitionInFlight) {
-        dom.loading.classList.add("hidden");
-        dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
-      }
-    }, 1000);
-  });
+  dom.returnLobbyBtn.addEventListener("click", () => handleReturnAction());
+  if (dom.mobileReturnBtn) {
+    dom.mobileReturnBtn.addEventListener("pointerdown", () => handleReturnAction());
+  }
   if (dom.fpsToggleBtn) {
     dom.fpsToggleBtn.addEventListener("click", () => {
       toggleFirstPerson();
@@ -1084,6 +1068,31 @@
     }
   }
 
+  function handleReturnAction() {
+    if (transitionInFlight) return;
+
+    if (activeMap === "hall") {
+      setMap("lobby", false);
+      snapToLobbyPortalSpawn();
+      return;
+    }
+
+    const lobbyReturnUrl = buildLobbyReturnUrl();
+    if (lobbyReturnUrl) {
+      window.location.assign(lobbyReturnUrl);
+      return;
+    }
+
+    dom.loading.textContent = "\uBCF5\uADC0 URL\uC774 \uC124\uC815\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
+    dom.loading.classList.remove("hidden");
+    setTimeout(() => {
+      if (!transitionInFlight) {
+        dom.loading.classList.add("hidden");
+        dom.loading.textContent = "\uB85C\uBE44 \uAD6C\uC131 \uC911...";
+      }
+    }, 1000);
+  }
+
   function isNearLobbyPortal(position = camera.position) {
     if (!lobbyMap.portalGroup || typeof lobbyMap.portalGroup.getWorldPosition !== "function") {
       return false;
@@ -1507,8 +1516,8 @@
 
   function setMap(nextMap, immediate) {
     activeMap = nextMap === "hall" ? "hall" : "lobby";
-    // Keep hall visible from lobby corridor so players see a continuous connection.
-    lobbyMap.group.visible = activeMap === "lobby";
+    // Keep lobby <-> corridor <-> hall continuously visible from both sides.
+    lobbyMap.group.visible = true;
     hallMap.group.visible = true;
     hallMap.seatingGroup.visible = true;
     scene.fog.density = activeMap === "hall" ? 0.014 : 0.017;
@@ -1580,6 +1589,9 @@
     const showReturn = activeMap === "hall" || hasExternalReturn;
     dom.returnLobbyBtn.classList.toggle("hidden", !showReturn);
     dom.returnLobbyBtn.textContent = activeMap === "hall" ? "\uB85C\uBE44\uB85C \uB3CC\uC544\uAC00\uAE30" : "EMPTINES\uB85C \uBCF5\uADC0";
+    if (dom.mobileReturnBtn) {
+      dom.mobileReturnBtn.classList.toggle("hidden", activeMap !== "hall");
+    }
     const hallOnly = activeMap === "hall";
     updateFxButtons();
     updatePresetButtons();

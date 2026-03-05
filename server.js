@@ -711,6 +711,19 @@ function handleShowStart(socket, payload) {
     activeClip: requestedClipId,
     activeAction: requestedActionId || clipActionId(requestedClipId)
   };
+  const nextDoorOpen = false;
+  const doorChanged = room.doorOpen !== nextDoorOpen;
+  room.doorOpen = nextDoorOpen;
+
+  if (doorChanged) {
+    io.to(room.key).emit("door:state", {
+      roomId: room.roomId,
+      hostId: room.hostId,
+      open: room.doorOpen,
+      by: socket.id,
+      ts: Date.now()
+    });
+  }
 
   io.to(room.key).emit("show:state", {
     roomId: room.roomId,
@@ -718,6 +731,7 @@ function handleShowStart(socket, payload) {
     ...room.showState,
     serverNow: Date.now()
   });
+  emitSnapshot(room);
 }
 
 function handleShowStop(socket) {
@@ -744,6 +758,19 @@ function handleShowStop(socket) {
     activeClip: room.showState.activeClip,
     activeAction: room.showState.activeAction || ""
   };
+  const nextDoorOpen = true;
+  const doorChanged = room.doorOpen !== nextDoorOpen;
+  room.doorOpen = nextDoorOpen;
+
+  if (doorChanged) {
+    io.to(room.key).emit("door:state", {
+      roomId: room.roomId,
+      hostId: room.hostId,
+      open: room.doorOpen,
+      by: socket.id,
+      ts: Date.now()
+    });
+  }
 
   io.to(room.key).emit("show:state", {
     roomId: room.roomId,
@@ -751,6 +778,7 @@ function handleShowStop(socket) {
     ...room.showState,
     serverNow: Date.now()
   });
+  emitSnapshot(room);
 }
 
 function handleLobbyPosterSet(socket, payload) {

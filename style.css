@@ -944,6 +944,11 @@ p {
   min-width: 54px;
 }
 
+#mobile-return {
+  min-width: 58px;
+  height: 42px;
+}
+
 body.is-mobile-ui #mobile-ui {
   display: flex;
 }
