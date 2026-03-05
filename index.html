@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>NEXA ?쇱씠釉?濡쒕퉬</title>
+  <title>NEXA 라이브 로비</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
   <link rel="stylesheet" href="./style.css" />
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -15,8 +15,8 @@
   <main id="app">
     <aside id="overlay">
       <section class="panel panel-intro">
-        <h1><span class="live-badge">?ㅼ떆媛?/span> NEXA ?쇱씠釉?濡쒕퉬</h1>
-        <p id="status-intent">濡쒕퉬?먯꽌 蹂듬룄瑜??곕씪 ?대룞??怨듭뿰???낃뎄濡?吏꾩엯?섏꽭??</p>
+        <h1><span class="live-badge">실시간</span> NEXA 라이브 로비</h1>
+        <p id="status-intent">로비에서 복도를 따라 이동해 공연장 입구로 진입하세요.</p>
       </section>
 
       <section class="panel panel-controls">
@@ -115,25 +115,25 @@
     </aside>
 
     <aside id="hud" class="hidden" aria-live="polite">
-      <div class="hud-chip"><span>留?/span><strong id="hud-map">濡쒕퉬</strong></div>
-      <div class="hud-chip"><span>?꾨젅??/span><strong id="hud-fps">0</strong></div>
-      <div class="hud-chip" id="hud-chip-seats"><span>?쒖꽦 醫뚯꽍</span><strong id="hud-seats">0</strong></div>
-      <div class="hud-chip"><span>?덉쭏</span><strong id="hud-quality">蹂댄넻</strong></div>
-      <div class="hud-chip"><span>臾?/span><strong id="hud-portal">?대┝</strong></div>
-      <div class="hud-chip"><span>?쒕줈?곗퐳</span><strong id="hud-drawcalls">0</strong></div>
+      <div class="hud-chip"><span>맵</span><strong id="hud-map">로비</strong></div>
+      <div class="hud-chip"><span>프레임</span><strong id="hud-fps">0</strong></div>
+      <div class="hud-chip" id="hud-chip-seats"><span>활성 좌석</span><strong id="hud-seats">0</strong></div>
+      <div class="hud-chip"><span>품질</span><strong id="hud-quality">보통</strong></div>
+      <div class="hud-chip"><span>문</span><strong id="hud-portal">열림</strong></div>
+      <div class="hud-chip"><span>드로우콜</span><strong id="hud-drawcalls">0</strong></div>
     </aside>
 
-    <div id="hud-ui" class="hidden" aria-label="?뚮젅?댁뼱 ?곹깭">
+    <div id="hud-ui" class="hidden" aria-label="플레이어 상태">
       <div class="hud-row" id="hud-row-status">
-        <span class="hud-key">?곹깭</span>
-        <span id="hud-status">?ㅽ봽由고듃</span>
+        <span class="hud-key">상태</span>
+        <span id="hud-status">대기</span>
       </div>
       <div class="hud-row" id="hud-row-players">
-        <span class="hud-key">?꾩옱 ?몄썝</span>
+        <span class="hud-key">현재 인원</span>
         <span id="hud-players">1</span>
       </div>
       <div class="hud-row" id="hud-row-position">
-        <span class="hud-key">醫뚰몴</span>
+        <span class="hud-key">좌표</span>
         <span id="hud-position">0, 0</span>
       </div>
       <div class="hud-row" id="hud-row-fps-mini">
@@ -142,20 +142,20 @@
       </div>
     </div>
 
-    <div id="chat-ui" class="collapsed" aria-label="梨꾪똿">
+    <div id="chat-ui" class="collapsed" aria-label="채팅">
       <div id="chat-header">
-        <span id="chat-title">?꾩옣 梨꾪똿</span>
-        <button id="chat-toggle" type="button" aria-expanded="false">?닿린</button>
+        <span id="chat-title">현장 채팅</span>
+        <button id="chat-toggle" type="button" aria-expanded="false">열기</button>
       </div>
       <div id="chat-log" role="log" aria-live="polite" aria-relevant="additions text"></div>
       <div id="chat-controls">
-        <input id="chat-input" type="text" maxlength="140" autocomplete="off" placeholder="硫붿떆吏 ?낅젰 ??Enter" />
-        <button id="chat-send" type="button">?꾩넚</button>
+        <input id="chat-input" type="text" maxlength="140" autocomplete="off" placeholder="메시지 입력 후 Enter" />
+        <button id="chat-send" type="button">전송</button>
       </div>
     </div>
-    <div id="mobile-ui" class="hidden" aria-label="紐⑤컮??議곗옉">
+    <div id="mobile-ui" class="hidden" aria-label="모바일 조작">
       <div id="mobile-left-col">
-        <button id="mobile-chat" class="mobile-action-btn" type="button">梨꾪똿</button>
+        <button id="mobile-chat" class="mobile-action-btn" type="button">채팅</button>
         <div id="mobile-move-pad" role="presentation">
           <div id="mobile-move-stick"></div>
         </div>
@@ -166,24 +166,24 @@
       </div>
     </div>
 
-    <div id="loading" aria-live="polite">濡쒕퉬 援ъ꽦 以?..</div>
+    <div id="loading" aria-live="polite">로비 구성 중...</div>
     <div id="nickname-gate" class="hidden" aria-live="polite">
       <div class="nickname-gate-card">
-        <h2>?됰꽕???낅젰</h2>
-        <p>?낆옣 ?꾩뿉 ?쒖떆???됰꽕?꾩쓣 ?낅젰?섏꽭??</p>
-        <input id="nickname-gate-input" type="text" maxlength="24" autocomplete="off" placeholder="?됰꽕??(2~24??" />
-        <button id="nickname-gate-confirm-btn" type="button">?낆옣</button>
-        <p id="nickname-gate-note" class="ops-value">?됰꽕?꾩쓣 ?낅젰?섍퀬 ?낆옣 踰꾪듉???꾨Ⅴ?몄슂.</p>
+        <h2>닉네임 입력</h2>
+        <p>입장 전에 표시될 닉네임을 입력하세요.</p>
+        <input id="nickname-gate-input" type="text" maxlength="24" autocomplete="off" placeholder="닉네임 (2~24자)" />
+        <button id="nickname-gate-confirm-btn" type="button">입장</button>
+        <p id="nickname-gate-note" class="ops-value">닉네임을 입력하고 입장 버튼을 누르세요.</p>
       </div>
     </div>
 
     <div id="portal-transition" aria-hidden="true">
       <div class="portal-transition-card">
-        <p id="portal-transition-label">?ы깉 ?숆린??/p>
-        <h2 id="portal-transition-title">怨듭뿰???낆옣 以?..</h2>
+        <p id="portal-transition-label">포탈 동기화</p>
+        <h2 id="portal-transition-title">공연장 입장 중...</h2>
       </div>
     </div>
-    <div id="canvas-root" aria-label="3D 臾대? 酉고룷??></div>
+    <div id="canvas-root" aria-label="3D 무대 뷰포트"></div>
   </main>
 </body>
 </html>
