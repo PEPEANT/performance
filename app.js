@@ -49,7 +49,7 @@
   const query = new URLSearchParams(window.location.search);
   const fromEmptines = String(query.get("from") || "").trim().toLowerCase() === "emptines";
   const adminUiMode = ["1", "true", "yes", "on"].includes(String(query.get("admin") || "").trim().toLowerCase());
-  const chatEnabled = adminUiMode;
+  const chatEnabled = true;
   const hostParamRaw = String(query.get("host") || "").trim().toLowerCase();
   const explicitHostTrue = ["1", "true", "yes", "on", "host"].includes(hostParamRaw);
   const explicitHostFalse = ["0", "false", "no", "off", "player"].includes(hostParamRaw);
@@ -64,6 +64,7 @@
   const returnPortalHint = String(query.get("returnPortal") || "").trim().toLowerCase();
 
   const dom = {
+    overlay: document.getElementById("overlay"),
     canvasRoot: document.getElementById("canvas-root"),
     loading: document.getElementById("loading"),
     statusIntent: document.getElementById("status-intent"),
@@ -90,6 +91,7 @@
     queueLoadBtn: document.getElementById("queue-load-btn"),
     queueClearBtn: document.getElementById("queue-clear-btn"),
     queueStatus: document.getElementById("queue-status"),
+    networkPanelToggleBtn: document.getElementById("network-panel-toggle-btn"),
     networkPanel: document.getElementById("network-panel"),
     networkRoleSelect: document.getElementById("network-role-select"),
     networkRoomInput: document.getElementById("network-room-input"),
@@ -101,6 +103,8 @@
     opsStack: document.querySelector(".panel-controls .ops-stack"),
     clipPanel: document.querySelector(".clip-panel"),
     fpsToggleBtn: document.getElementById("fps-toggle-btn"),
+    hudWrap: document.getElementById("hud"),
+    hudUiWrap: document.getElementById("hud-ui"),
     hudMap: document.getElementById("hud-map"),
     hudFps: document.getElementById("hud-fps"),
     hudSeatsChip: document.getElementById("hud-chip-seats"),
@@ -118,6 +122,12 @@
     chatInput: document.getElementById("chat-input"),
     chatSend: document.getElementById("chat-send"),
     chatToggle: document.getElementById("chat-toggle"),
+    mobileUi: document.getElementById("mobile-ui"),
+    mobileMovePad: document.getElementById("mobile-move-pad"),
+    mobileMoveStick: document.getElementById("mobile-move-stick"),
+    mobileJumpBtn: document.getElementById("mobile-jump"),
+    mobileSprintBtn: document.getElementById("mobile-sprint"),
+    mobileChatBtn: document.getElementById("mobile-chat"),
     portalTransition: document.getElementById("portal-transition"),
     portalTransitionLabel: document.getElementById("portal-transition-label"),
     portalTransitionTitle: document.getElementById("portal-transition-title")
@@ -252,6 +262,12 @@
   let playerYaw = 0;
   let playerPitch = 0;
   let chatCollapsed = true;
+  let networkPanelExpanded = false;
+  let mobileMovePointerId = null;
+  let mobileMoveRadius = 44;
+  let mobileLookTouchId = null;
+  let mobileLookLastX = 0;
+  let mobileLookLastY = 0;
   let lastChatSentAt = 0;
   let remoteUpdateAccumulator = 0;
   const tempBillboardTarget = new THREE.Vector3();
@@ -448,6 +464,7 @@
     dom.queueClearBtn.addEventListener("click", () => clearQueueEvents());
   }
 
+  setupNetworkPanelToggle();
   applyUiVisibilityMode();
   if (adminUiMode) {
     setupNetworkProfileUi();
@@ -455,6 +472,7 @@
   setupShowMedia();
   setupPlayerSystem();
   setupFirstPersonControls();
+  setupMobileControls();
   if (chatEnabled) {
     setupChatUi();
   }
@@ -556,6 +574,207 @@
     };
   }
 
+  function setNetworkPanelExpanded(expanded) {
+    networkPanelExpanded = Boolean(expanded);
+
+    if (dom.networkPanel) {
+      dom.networkPanel.classList.toggle("hidden", !networkPanelExpanded);
+    }
+
+    if (dom.networkPanelToggleBtn) {
+      dom.networkPanelToggleBtn.classList.toggle("active", networkPanelExpanded);
+      dom.networkPanelToggleBtn.textContent = networkPanelExpanded
+        ? "온라인 접속 패널 닫기"
+        : "온라인 접속 패널 열기";
+      dom.networkPanelToggleBtn.setAttribute("aria-expanded", String(networkPanelExpanded));
+    }
+  }
+
+  function setupNetworkPanelToggle() {
+    if (!dom.networkPanelToggleBtn || !dom.networkPanel) {
+      return;
+    }
+
+    setNetworkPanelExpanded(false);
+    dom.networkPanelToggleBtn.addEventListener("click", () => {
+      setNetworkPanelExpanded(!networkPanelExpanded);
+    });
+  }
+
+  function setMovementStateFromMobileAxes(axisX, axisY) {
+    const threshold = 0.22;
+    moveState.forward = axisY > threshold;
+    moveState.backward = axisY < -threshold;
+    moveState.right = axisX > threshold;
+    moveState.left = axisX < -threshold;
+  }
+
+  function updateMobileMoveFromPointer(clientX, clientY) {
+    if (!dom.mobileMovePad || !dom.mobileMoveStick) {
+      return;
+    }
+
+    const rect = dom.mobileMovePad.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    mobileMoveRadius = Math.max(12, Math.min(rect.width, rect.height) * 0.5 - 18);
+
+    const rawDx = clientX - centerX;
+    const rawDy = clientY - centerY;
+    const distance = Math.hypot(rawDx, rawDy);
+    const scale = distance > mobileMoveRadius ? (mobileMoveRadius / distance) : 1;
+    const dx = rawDx * scale;
+    const dy = rawDy * scale;
+
+    const axisX = mobileMoveRadius > 0 ? dx / mobileMoveRadius : 0;
+    const axisY = mobileMoveRadius > 0 ? -dy / mobileMoveRadius : 0;
+
+    dom.mobileMoveStick.style.transform = `translate(calc(-50% + ${dx.toFixed(2)}px), calc(-50% + ${dy.toFixed(2)}px))`;
+    setMovementStateFromMobileAxes(axisX, axisY);
+  }
+
+  function resetMobileMoveInput() {
+    mobileMovePointerId = null;
+    setMovementStateFromMobileAxes(0, 0);
+    if (dom.mobileMoveStick) {
+      dom.mobileMoveStick.style.transform = "translate(-50%, -50%)";
+    }
+  }
+
+  function setupMobileControls() {
+    if (!isMobile) {
+      return;
+    }
+
+    document.body.classList.add("is-mobile-ui");
+    if (dom.mobileUi) {
+      dom.mobileUi.classList.remove("hidden");
+    }
+
+    if (dom.mobileMovePad) {
+      dom.mobileMovePad.addEventListener("pointerdown", (event) => {
+        mobileMovePointerId = event.pointerId;
+        dom.mobileMovePad.setPointerCapture?.(event.pointerId);
+        updateMobileMoveFromPointer(event.clientX, event.clientY);
+      });
+
+      dom.mobileMovePad.addEventListener("pointermove", (event) => {
+        if (event.pointerId !== mobileMovePointerId) {
+          return;
+        }
+        updateMobileMoveFromPointer(event.clientX, event.clientY);
+      });
+
+      const clearMovePointer = (event) => {
+        if (event.pointerId !== mobileMovePointerId) {
+          return;
+        }
+        dom.mobileMovePad.releasePointerCapture?.(event.pointerId);
+        resetMobileMoveInput();
+      };
+
+      dom.mobileMovePad.addEventListener("pointerup", clearMovePointer);
+      dom.mobileMovePad.addEventListener("pointercancel", clearMovePointer);
+      dom.mobileMovePad.addEventListener("pointerleave", clearMovePointer);
+    }
+
+    if (dom.mobileJumpBtn) {
+      const clearJumpVisual = () => dom.mobileJumpBtn.classList.remove("active");
+      dom.mobileJumpBtn.addEventListener("pointerdown", () => {
+        moveState.jump = true;
+        dom.mobileJumpBtn.classList.add("active");
+      });
+      dom.mobileJumpBtn.addEventListener("pointerup", clearJumpVisual);
+      dom.mobileJumpBtn.addEventListener("pointercancel", clearJumpVisual);
+      dom.mobileJumpBtn.addEventListener("pointerleave", clearJumpVisual);
+    }
+
+    if (dom.mobileSprintBtn) {
+      const setSprint = (active) => {
+        moveState.run = Boolean(active);
+        dom.mobileSprintBtn.classList.toggle("active", moveState.run);
+      };
+      dom.mobileSprintBtn.addEventListener("pointerdown", () => setSprint(true));
+      dom.mobileSprintBtn.addEventListener("pointerup", () => setSprint(false));
+      dom.mobileSprintBtn.addEventListener("pointercancel", () => setSprint(false));
+      dom.mobileSprintBtn.addEventListener("pointerleave", () => setSprint(false));
+    }
+
+    if (dom.mobileChatBtn) {
+      dom.mobileChatBtn.addEventListener("pointerdown", () => {
+        if (chatCollapsed) {
+          setChatCollapsed(false);
+          dom.chatInput?.focus();
+          return;
+        }
+        setChatCollapsed(true);
+        dom.chatInput?.blur();
+      });
+    }
+
+    renderer.domElement.addEventListener("touchstart", (event) => {
+      if (!firstPersonEnabled || mobileLookTouchId !== null) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof Element && (
+          dom.mobileUi?.contains(target) ||
+          dom.chatUi?.contains(target) ||
+          dom.overlay?.contains(target)
+        )
+      ) {
+        return;
+      }
+
+      const touch = event.changedTouches?.[0] ?? event.touches?.[0];
+      if (!touch) {
+        return;
+      }
+
+      mobileLookTouchId = touch.identifier;
+      mobileLookLastX = touch.clientX;
+      mobileLookLastY = touch.clientY;
+    }, { passive: true });
+
+    renderer.domElement.addEventListener("touchmove", (event) => {
+      if (!firstPersonEnabled || mobileLookTouchId === null) {
+        return;
+      }
+
+      const touch = Array.from(event.touches ?? []).find(
+        (candidate) => candidate.identifier === mobileLookTouchId
+      );
+      if (!touch) {
+        return;
+      }
+
+      const dx = touch.clientX - mobileLookLastX;
+      const dy = touch.clientY - mobileLookLastY;
+      mobileLookLastX = touch.clientX;
+      mobileLookLastY = touch.clientY;
+
+      playerYaw -= dx * PLAYER_LOOK_SENSITIVITY * 0.9;
+      playerPitch -= dy * PLAYER_LOOK_SENSITIVITY * 0.9;
+      playerPitch = THREE.MathUtils.clamp(playerPitch, -1.45, 1.45);
+    }, { passive: true });
+
+    const clearLookTouch = (event) => {
+      if (mobileLookTouchId === null) {
+        return;
+      }
+      const ended = Array.from(event.changedTouches ?? []).some(
+        (touch) => touch.identifier === mobileLookTouchId
+      );
+      if (ended) {
+        mobileLookTouchId = null;
+      }
+    };
+
+    window.addEventListener("touchend", clearLookTouch, { passive: true });
+    window.addEventListener("touchcancel", clearLookTouch, { passive: true });
+  }
   function computePortalState(_nowMs = Date.now()) {
     return { phase: "open", secondsLeft: 0, progress: 1 };
   }
@@ -1500,17 +1719,30 @@ function updateShowStartButton() {
       dom.showStartBtn.disabled = true;
       return;
     }
-    const hallOnly = activeMap === "hall";
-    dom.showStartBtn.classList.toggle("hidden", !hallOnly);
+
+    dom.showStartBtn.classList.remove("hidden");
 
     if (socketConnected && !isHostClient) {
       dom.showStartBtn.disabled = true;
-      dom.showStartBtn.textContent = "\uD638\uC2A4\uD2B8 \uC804\uC6A9";
+      dom.showStartBtn.textContent = "호스트 전용";
       return;
     }
 
-    dom.showStartBtn.disabled = !hallOnly || !stageVideoReady;
-    dom.showStartBtn.textContent = showPlaying ? "\uACF5\uC5F0 \uC7AC\uC2DC\uC791" : "\uACF5\uC5F0 \uC2DC\uC791";
+    const hallOnly = activeMap === "hall";
+    if (!hallOnly) {
+      dom.showStartBtn.disabled = true;
+      dom.showStartBtn.textContent = "공연 시작 (공연장 이동 필요)";
+      return;
+    }
+
+    if (!stageVideoReady) {
+      dom.showStartBtn.disabled = true;
+      dom.showStartBtn.textContent = "영상 준비 중...";
+      return;
+    }
+
+    dom.showStartBtn.disabled = false;
+    dom.showStartBtn.textContent = showPlaying ? "공연 재시작" : "공연 시작";
   }
 
 function updateHud() {
@@ -1557,13 +1789,23 @@ function clampNumber(value, min, max) {
   function applyUiVisibilityMode() {
     const hideOptionalUi = !adminUiMode;
     setElementHidden(dom.introStats, hideOptionalUi);
-    setElementHidden(dom.networkPanel, hideOptionalUi);
     setElementHidden(dom.controlsTitle, hideOptionalUi);
     setElementHidden(dom.presetGrid, hideOptionalUi);
     setElementHidden(dom.opsStack, hideOptionalUi);
     setElementHidden(dom.clipPanel, hideOptionalUi);
     setElementHidden(dom.chatUi, !chatEnabled);
-    setElementHidden(dom.hudSeatsChip, hideOptionalUi);
+    setElementHidden(dom.networkPanelToggleBtn, hideOptionalUi);
+
+    if (hideOptionalUi) {
+      setNetworkPanelExpanded(false);
+      setElementHidden(dom.networkPanel, true);
+    } else {
+      setNetworkPanelExpanded(networkPanelExpanded);
+    }
+
+    setElementHidden(dom.hudWrap, true);
+    setElementHidden(dom.hudUiWrap, true);
+    setElementHidden(dom.hudSeatsChip, true);
     setElementHidden(dom.hudPlayersRow, true);
     setElementHidden(dom.statCapacityCard, true);
 

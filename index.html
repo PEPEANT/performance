@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -49,7 +49,10 @@
           </div>
         </div>
 
-        <div id="network-panel" class="network-panel">
+        <button id="network-panel-toggle-btn" class="ghost-btn network-toggle-btn" type="button" aria-expanded="false" aria-controls="network-panel">
+          온라인 접속 패널 열기
+        </button>
+        <div id="network-panel" class="network-panel hidden">
           <h3>온라인 접속</h3>
           <div class="network-grid">
             <label class="ops-label" for="network-role-select">역할</label>
@@ -103,7 +106,7 @@
       </section>
     </aside>
 
-    <aside id="hud" aria-live="polite">
+    <aside id="hud" class="hidden" aria-live="polite">
       <div class="hud-chip"><span>맵</span><strong id="hud-map">로비</strong></div>
       <div class="hud-chip"><span>프레임</span><strong id="hud-fps">0</strong></div>
       <div class="hud-chip" id="hud-chip-seats"><span>활성 좌석</span><strong id="hud-seats">0</strong></div>
@@ -112,7 +115,7 @@
       <div class="hud-chip"><span>드로우콜</span><strong id="hud-drawcalls">0</strong></div>
     </aside>
 
-    <div id="hud-ui" aria-label="플레이어 상태">
+    <div id="hud-ui" class="hidden" aria-label="플레이어 상태">
       <div class="hud-row" id="hud-row-status">
         <span class="hud-key">상태</span>
         <span id="hud-status">스프린트</span>
@@ -140,6 +143,18 @@
       <div id="chat-controls">
         <input id="chat-input" type="text" maxlength="140" autocomplete="off" placeholder="메시지 입력 후 Enter" />
         <button id="chat-send" type="button">전송</button>
+      </div>
+    </div>
+    <div id="mobile-ui" class="hidden" aria-label="모바일 조작">
+      <div id="mobile-left-col">
+        <button id="mobile-chat" class="mobile-action-btn" type="button">채팅</button>
+        <div id="mobile-move-pad" role="presentation">
+          <div id="mobile-move-stick"></div>
+        </div>
+      </div>
+      <div id="mobile-actions">
+        <button id="mobile-sprint" class="mobile-action-btn" type="button">질주</button>
+        <button id="mobile-jump" class="mobile-action-btn" type="button">점프</button>
       </div>
     </div>
 
